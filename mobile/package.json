@@ -1,0 +1,21 @@
+{
+  "name": "biyi-xunlian-mobile",
+  "version": "1.0.0",
+  "description": "笔译训练 — Capacitor iOS",
+  "private": true,
+  "scripts": {
+    "sync": "bash scripts/sync-ios.sh",
+    "open": "npx cap open ios"
+  },
+  "dependencies": {
+    "@capacitor-community/media": "^6.0.0",
+    "@capacitor/core": "^6.2.0",
+    "@capacitor/filesystem": "^6.0.4",
+    "@capacitor/ios": "^6.2.0",
+    "@capacitor/keyboard": "^6.0.4",
+    "@capacitor/share": "^6.0.4"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^6.2.0"
+  }
+}

@@ -1,0 +1,145 @@
+{
+  "banks": [
+    {
+      "code": "RA",
+      "title": "Read Aloud",
+      "subtitle": "口语 · 朗读",
+      "recite": true,
+      "count": 1443
+    },
+    {
+      "code": "RS",
+      "title": "Repeat Sentence",
+      "subtitle": "口语 · 复述",
+      "recite": true,
+      "count": 2841
+    },
+    {
+      "code": "ASQ",
+      "title": "Answer Short Question",
+      "subtitle": "口语 · 简答",
+      "recite": true,
+      "count": 2353
+    },
+    {
+      "code": "DI",
+      "title": "Describe Image",
+      "subtitle": "口语 · 看图说话",
+      "recite": true,
+      "count": 1214
+    },
+    {
+      "code": "RTS",
+      "title": "Respond to a Situation",
+      "subtitle": "口语 · 情景应对",
+      "recite": true,
+      "count": 107
+    },
+    {
+      "code": "WFD",
+      "title": "Write From Dictation",
+      "subtitle": "听力 · 听写",
+      "recite": true,
+      "count": 3214
+    },
+    {
+      "code": "HIW",
+      "title": "Highlight Incorrect Words",
+      "subtitle": "听力 · 找错词",
+      "recite": true,
+      "count": 336
+    },
+    {
+      "code": "LFIB",
+      "title": "Listening FIB",
+      "subtitle": "听力 · 填空",
+      "recite": true,
+      "count": 288
+    },
+    {
+      "code": "LMCM",
+      "title": "Listening MCM",
+      "subtitle": "听力 · 多选",
+      "recite": false,
+      "count": 70
+    },
+    {
+      "code": "LMCS",
+      "title": "Listening MCS",
+      "subtitle": "听力 · 单选",
+      "recite": false,
+      "count": 87
+    },
+    {
+      "code": "SMW",
+      "title": "Select Missing Word",
+      "subtitle": "听力 · 选词",
+      "recite": false,
+      "count": 89
+    },
+    {
+      "code": "FIB_RD",
+      "title": "Reading FIB",
+      "subtitle": "阅读 · 填空",
+      "recite": false,
+      "count": 1041
+    },
+    {
+      "code": "FIB_WR",
+      "title": "Writing FIB",
+      "subtitle": "写作 · 填空",
+      "recite": false,
+      "count": 1133
+    },
+    {
+      "code": "RMCM",
+      "title": "Reading MCM",
+      "subtitle": "阅读 · 多选",
+      "recite": false,
+      "count": 62
+    },
+    {
+      "code": "RMCS",
+      "title": "Reading MCS",
+      "subtitle": "阅读 · 单选",
+      "recite": false,
+      "count": 102
+    },
+    {
+      "code": "RO",
+      "title": "Reorder Paragraph",
+      "subtitle": "阅读 · 排序",
+      "recite": false,
+      "count": 762
+    },
+    {
+      "code": "SST",
+      "title": "Summarize Spoken Text",
+      "subtitle": "听力 · 总结",
+      "recite": true,
+      "count": 51
+    },
+    {
+      "code": "FRIENDS",
+      "title": "老友记",
+      "subtitle": "影视 · 台词",
+      "recite": true,
+      "count": 232
+    },
+    {
+      "code": "SWT",
+      "title": "Summarize Written Text",
+      "subtitle": "写作 · 总结",
+      "recite": false,
+      "count": 80
+    },
+    {
+      "code": "WE",
+      "title": "Write Email",
+      "subtitle": "写作 · 邮件",
+      "recite": false,
+      "count": 53
+    }
+  ],
+  "total": 15558
+}

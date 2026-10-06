@@ -1,0 +1,678 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta name="color-scheme" content="light" />
+  <title>译</title>
+  <style>
+    @font-face {
+      font-family: "方正行楷简体";
+      src: url("./fonts/FZXingKaiJian.ttf") format("truetype");
+      font-weight: 400 700;
+      font-style: normal;
+      font-display: swap;
+    }
+    @font-face {
+      font-family: "FZXingKaiJian";
+      src: url("./fonts/FZXingKaiJian.ttf") format("truetype");
+      font-weight: 400 700;
+      font-style: normal;
+      font-display: swap;
+    }
+    @font-face {
+      font-family: "你的名字 我的心跳";
+      src: url("./fonts/ZiYuFangNiDeMingZi.ttf") format("truetype");
+      font-weight: 400 700;
+      font-style: normal;
+      font-display: swap;
+    }
+    @font-face {
+      font-family: "NiDeMingZi WoDeXinTiao";
+      src: url("./fonts/ZiYuFangNiDeMingZi.ttf") format("truetype");
+      font-weight: 400 700;
+      font-style: normal;
+      font-display: swap;
+    }
+  </style>
+  <link rel="stylesheet" href="./css/app.css?v=20261006audio" />
+</head>
+<body>
+  <main id="view-practice" class="view translation-on">
+    <header class="topbar">
+      <div class="q-head">
+        <h1 id="q-name">加载中…</h1>
+        <p id="q-meta" class="q-meta"></p>
+      </div>
+      <div class="topbar-right">
+        <div class="topbar-actions">
+          <button type="button" class="btn btn-ghost btn-compact voice-memo-btn" id="btn-voice-memo" title="开始录音">
+            <span data-voice-memo-label>录音</span>
+            <span data-voice-memo-timer hidden>0:00</span>
+          </button>
+          <button type="button" class="btn btn-ghost btn-compact" id="btn-voice-memo-done" hidden title="完成录音">完成</button>
+          <button type="button" class="btn btn-ghost btn-compact" id="btn-voice-pick" title="选择朗读音色（全局：全文、意群、笔译）">音色</button>
+          <button type="button" class="btn btn-ghost btn-compact" id="btn-wordbook" title="查看已添加的难读单词">词典</button>
+          <button type="button" class="btn btn-ghost btn-compact" id="btn-custom-text-add" title="新增英语文本">新增文本</button>
+          <button type="button" class="btn btn-ghost btn-compact" id="btn-custom-text-edit" title="编辑当前文本">编辑文本</button>
+        </div>
+        <label class="bank-wrap">
+          <span class="sr-only">题库</span>
+          <select id="bank-select" aria-label="选择题库"></select>
+        </label>
+      </div>
+    </header>
+
+    <section class="practice-body">
+      <div class="fold-pair">
+        <div class="sense-section" id="sense-section">
+          <button
+            type="button"
+            class="sense-fold-btn"
+            id="btn-sense-fold"
+            aria-expanded="true"
+            aria-controls="sense-block"
+            title="折叠 / 展开意群"
+          >
+            <span class="sense-fold-label">意群</span>
+            <span class="sense-fold-meta" id="sense-fold-meta"></span>
+            <span class="sense-fold-chevron" aria-hidden="true">▾</span>
+          </button>
+          <div
+            id="sense-block"
+            class="sense-block sense-pager"
+            aria-label="意群，左右滑动翻页"
+          ></div>
+        </div>
+
+        <div class="en-full-section" id="en-full-section">
+          <div class="en-full-hd">
+            <button
+              type="button"
+              class="sense-fold-btn"
+              id="btn-en-full-fold"
+              aria-expanded="true"
+              aria-controls="en-full-block"
+              title="折叠全文"
+            >
+              <span class="sense-fold-label">全文</span>
+              <span class="sense-fold-meta" id="en-full-fold-meta"></span>
+              <span class="sense-fold-chevron" aria-hidden="true">▾</span>
+            </button>
+            <div class="en-full-actions">
+              <button
+                type="button"
+                class="en-full-play-btn en-full-dl-btn"
+                id="btn-en-full-import"
+                hidden
+                title="导入本机整篇文章音频；有导入时全文朗读优先播它"
+              >
+                导入全文音频
+              </button>
+              <input
+                id="en-full-audio-file"
+                type="file"
+                accept="audio/*,.mp3,.m4a,.aac,.wav,.ogg,.flac,.mp4"
+                hidden
+              />
+              <button
+                type="button"
+                class="en-full-play-btn en-full-dl-btn"
+                id="btn-en-full-dl"
+                hidden
+                title="把全文的联网朗读音频提前存到本机，之后锁屏、离线也能连续播放"
+              >
+                下载全文音频
+              </button>
+              <button
+                type="button"
+                class="en-full-play-btn"
+                id="btn-en-full-play"
+                hidden
+                title="朗读全文（音色在顶部「音色」里选）"
+              >
+                全文朗读
+              </button>
+            </div>
+          </div>
+          <div id="en-full-block" class="en-full-block" lang="en" aria-label="中英对照全文，可点英文单词发音"></div>
+        </div>
+      </div>
+
+      <div class="passage-wrap translation-on" id="passage-wrap">
+        <button
+          type="button"
+          class="sense-fold-btn"
+          id="btn-translation-fold"
+          aria-expanded="true"
+          aria-controls="translation-fold-body"
+          title="折叠笔译"
+        >
+          <span class="sense-fold-label">笔译</span>
+          <span class="sense-fold-meta" id="translation-fold-meta"></span>
+          <span class="sense-fold-chevron" aria-hidden="true">▾</span>
+        </button>
+        <div id="translation-fold-body" class="translation-fold-body">
+        <div class="passage-toolbar">
+          <div class="translation-prompt" id="translation-lead" aria-live="polite"></div>
+        </div>
+
+        <!-- 录屏合成会读取这些节点（可为空） -->
+        <article class="passage hidden" id="passage" aria-hidden="true"></article>
+        <p class="zh hidden" id="zh-text" aria-hidden="true"></p>
+
+        <div class="translation-daily-banner" id="translation-tool-bar">
+          <div class="translation-daily-banner-top">
+            <button
+              type="button"
+              class="translation-daily-banner-btn"
+              id="btn-translation-daily-stats"
+              title="查看每日笔译词数日历"
+            >
+              <span class="translation-daily-banner-kicker">今日输入</span>
+              <span class="translation-daily-banner-main">
+                <strong id="translation-daily-count">0</strong>
+                <span class="translation-daily-banner-unit">词</span>
+              </span>
+            </button>
+            <div class="translation-daily-banner-ctas">
+              <button
+                type="button"
+                class="translation-daily-banner-cta"
+                id="btn-translation-daily"
+                title="查看每日笔译词数日历"
+              >日历</button>
+            </div>
+          </div>
+          <div class="passage-toolbar-switches">
+            <div class="passage-toolbar-switches-inner">
+            <button
+              type="button"
+              class="dictation-switch system-camera-btn"
+              data-system-camera
+              role="switch"
+              aria-label="开始悬浮录像"
+              title="开始悬浮录像"
+              aria-pressed="false"
+            >
+              <span class="dictation-switch-label">录像</span>
+              <span class="dictation-switch-ui" aria-hidden="true"></span>
+              <span class="voice-record-icon-timer" data-camera-btn-timer hidden>0:00</span>
+            </button>
+            <button
+              type="button"
+              class="dictation-switch screen-record-switch"
+              data-screen-record
+              role="switch"
+              aria-label="开始录屏"
+              title="开始录屏"
+              aria-pressed="false"
+            >
+              <span class="dictation-switch-label">录屏</span>
+              <span class="dictation-switch-ui" aria-hidden="true"></span>
+              <span class="voice-record-icon-timer" data-screen-record-timer hidden>0:00</span>
+            </button>
+            <label class="dictation-switch" data-switch="tts" title="笔译时朗读已输入的单词；声音在「全文朗读」里选">
+              <span class="dictation-switch-label">朗读</span>
+              <input type="checkbox" id="toggle-tts" role="switch" aria-label="笔译朗读" />
+              <span class="dictation-switch-ui" aria-hidden="true"></span>
+            </label>
+            <label class="dictation-switch" data-switch="answer" title="显示淡色笔译答案（录屏不收录）">
+              <span class="dictation-switch-label">答案</span>
+              <input type="checkbox" id="toggle-answer" role="switch" aria-label="显示笔译答案" />
+              <span class="dictation-switch-ui" aria-hidden="true"></span>
+            </label>
+            </div>
+          </div>
+        </div>
+
+        <div class="translation-panel" id="translation-panel">
+          <div class="translation-answer-wrap" id="translation-answer-wrap">
+            <div class="translation-answer-ghost" id="translation-answer-ghost" aria-hidden="true"></div>
+            <textarea
+              id="translation-input"
+              class="dictation-input"
+              rows="1"
+              lang="en"
+              inputmode="latin"
+              spellcheck="false"
+              autocomplete="off"
+              autocorrect="off"
+              autocapitalize="off"
+              enterkeyhint="done"
+              aria-label="意群笔译输入"
+            ></textarea>
+          </div>
+
+          <div class="dictation-meta translation-meta">
+            <span id="translation-progress" class="translation-progress" aria-live="polite">
+              意群
+              <button type="button" class="translation-jump-idx" id="btn-translation-jump-idx" title="跳转到指定意群" aria-label="跳转意群">0</button>
+              /
+              <span id="translation-group-total">0</span>
+              ·
+              <span id="translation-char-progress">0 / 0</span>
+            </span>
+            <span id="translation-hint" class="sr-only" aria-live="polite">逐字校验中</span>
+            <div class="translation-nav" role="group" aria-label="笔译操作">
+              <button type="button" class="translation-play" id="btn-translation-clear-current" title="清空当前意群的笔译" aria-label="清除当前意群">清除当前意群</button>
+              <button type="button" class="translation-play" id="btn-translation-clear-all" title="清空当前及之后意群的笔译" aria-label="清除往后意群">清除往后意群</button>
+              <button type="button" class="translation-play" id="btn-translation-play" hidden title="播放这一意群" aria-label="播放这一意群">播放</button>
+              <button type="button" class="translation-nav-btn" id="btn-translation-prev" title="上一个意群（↑）" aria-label="上一个意群">▲</button>
+              <button type="button" class="translation-nav-btn" id="btn-translation-next" title="下一个意群（↓）" aria-label="下一个意群">▼</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="screen-opts" aria-label="录屏选项">
+          <label class="screen-opt" title="画质">
+            <span class="screen-opt-label">画质</span>
+            <select data-screen-quality aria-label="录屏画质">
+              <option value="720p30">1280×720 · 30</option>
+              <option value="1080p30" selected>1920×1080 · 30</option>
+              <option value="1080p60">1920×1080 · 60</option>
+              <option value="portrait30">1080×1920 · 30</option>
+              <option value="1440p30">2560×1440 · 30</option>
+            </select>
+          </label>
+          <label class="screen-opt" title="中文字体">
+            <span class="screen-opt-label">中文字体</span>
+            <select data-screen-lead-font aria-label="中文字体">
+              <option value="fzxingkai" selected>行楷</option>
+              <option value="nidemingzi">名字</option>
+              <option value="kaiti">楷体</option>
+              <option value="songti">宋体</option>
+              <option value="heiti">黑体</option>
+              <option value="pingfang">苹方</option>
+              <option value="yuanti">圆体</option>
+            </select>
+          </label>
+          <label class="screen-opt" title="英文字体">
+            <span class="screen-opt-label">英文字体</span>
+            <select data-screen-en-font aria-label="英文字体">
+              <option value="mono" selected>等宽</option>
+              <option value="georgia">Georgia</option>
+              <option value="times">Times</option>
+              <option value="palatino">Palatino</option>
+              <option value="italic">Italic</option>
+              <option value="garamond">Garamond</option>
+              <option value="cambria">Cambria</option>
+              <option value="calibri">Calibri</option>
+              <option value="verdana">Verdana</option>
+              <option value="arial">Arial</option>
+            </select>
+          </label>
+          <label class="screen-opt" title="英文换行临界字号（像素）">
+            <span class="screen-opt-label">英文换行</span>
+            <input
+              type="number"
+              data-screen-en-wrap
+              inputmode="numeric"
+              min="24"
+              max="200"
+              step="1"
+              value="54"
+              aria-label="英文换行临界字号（像素）"
+            />
+          </label>
+          <label class="screen-opt" title="锁屏卡片要不要显示英文重音标记">
+            <span class="screen-opt-label">锁屏重音</span>
+            <select data-lock-stress aria-label="锁屏重音标记">
+              <option value="1" selected>有</option>
+              <option value="0">无</option>
+            </select>
+          </label>
+          <label class="screen-opt" title="录屏词数统计：有 / 无">
+            <span class="screen-opt-label">词数统计</span>
+            <select data-screen-words-badge aria-label="录屏词数统计">
+              <option value="1" selected>有</option>
+              <option value="0">无</option>
+            </select>
+          </label>
+          <label class="screen-opt" title="连续无操作多少秒后自动暂停录屏（步进 0.5；0=关闭）">
+            <span class="screen-opt-label">自动暂停</span>
+            <input
+              type="number"
+              class="screen-opt-spinner"
+              data-screen-idle-skip
+              inputmode="decimal"
+              min="0"
+              max="120"
+              step="0.5"
+              value="3"
+              aria-label="自动暂停秒数（步进 0.5）"
+            />
+          </label>
+        </div>
+        </div>
+
+      <div class="camera-float" data-camera-float hidden>
+        <div class="camera-float-chrome" data-camera-float-drag>
+          <span class="camera-float-title">录像</span>
+          <span class="camera-float-timer" data-camera-timer>0:00</span>
+          <div class="camera-float-chrome-actions">
+            <button type="button" class="camera-float-chip" data-camera-minimize title="收起悬浮窗，不挡字幕">收起</button>
+            <button type="button" class="camera-float-chip" data-camera-facing title="切换前后摄像头">前置</button>
+            <button type="button" class="camera-float-chip" data-camera-finish title="结束本段录像">完成</button>
+            <button type="button" class="camera-float-chip" data-camera-close title="关闭悬浮窗">关闭</button>
+          </div>
+        </div>
+        <div class="camera-float-preview" data-camera-preview>
+          <video class="camera-float-live" data-camera-live playsinline muted autoplay></video>
+          <span class="camera-float-badge">录像中</span>
+        </div>
+        <div class="camera-float-player" data-camera-player hidden>
+          <video class="camera-float-playback" data-camera-playback playsinline></video>
+          <div class="camera-float-actions">
+            <button type="button" class="camera-float-btn" data-camera-play disabled>播放</button>
+            <button type="button" class="camera-float-btn" data-camera-save disabled>保存</button>
+            <button type="button" class="camera-float-btn" data-camera-rerecord>重录</button>
+          </div>
+        </div>
+        <p class="camera-float-tip" data-camera-tip data-default-tip="点「录像」先选分辨率/帧率，保存为 MP4"></p>
+        <button
+          type="button"
+          class="camera-float-resize"
+          data-camera-resize
+          aria-label="拖动缩放画面"
+          title="拖动右下角缩放"
+        ></button>
+      </div>
+
+      <div class="screen-record-float" data-screen-record-float hidden>
+        <div class="screen-record-float-main">
+          <span class="screen-record-float-meta" data-screen-record-float-meta>已暂停</span>
+          <span class="screen-record-float-timer" data-screen-record-float-timer>0:00</span>
+        </div>
+        <div class="screen-record-float-actions">
+          <button type="button" class="screen-record-float-btn" data-screen-record-resume hidden>继续</button>
+          <button type="button" class="screen-record-float-btn" data-screen-record-save hidden>保存</button>
+          <button type="button" class="screen-record-float-btn" data-screen-record-discard>删除</button>
+        </div>
+        <div class="screen-record-save-progress" data-screen-record-progress hidden>
+          <div class="screen-record-save-progress-label" data-screen-record-progress-label>正在保存到本地…</div>
+          <div
+            class="screen-record-save-progress-track"
+            role="progressbar"
+            aria-valuemin="0"
+            aria-valuemax="100"
+            aria-valuenow="0"
+            data-screen-record-progress-track
+          >
+            <div class="screen-record-save-progress-fill" data-screen-record-progress-fill></div>
+          </div>
+          <span class="screen-record-save-progress-pct" data-screen-record-progress-pct>0%</span>
+        </div>
+      </div>
+      <p class="hint-line" data-screen-record-tip>点「录屏」开始；再点暂停 → 底部「保存」到本地</p>
+
+      <div class="action-bar">
+        <button type="button" class="btn" id="btn-prev">上一题</button>
+        <button type="button" class="btn btn-primary" id="btn-next">下一题</button>
+      </div>
+      <p class="hint-line">↑↓ 切换意群 · ←→ 切换题目 · 写错会拦住，连续错 3 次自动填入</p>
+      </div>
+    </section>
+  </main>
+
+  <div id="translation-words-calendar" class="app-dialog hidden" role="dialog" aria-modal="true" aria-labelledby="translation-cal-title-heading">
+    <div class="app-dialog-card translation-cal-card">
+      <h3 id="translation-cal-title-heading">笔译词数</h3>
+      <div class="translation-cal-nav">
+        <button type="button" class="translation-cal-nav-btn" id="translation-cal-prev" aria-label="上个月">‹</button>
+        <strong id="translation-cal-month" class="translation-cal-month"></strong>
+        <button type="button" class="translation-cal-nav-btn" id="translation-cal-next" aria-label="下个月">›</button>
+      </div>
+      <div class="translation-cal-weekdays" aria-hidden="true">
+        <span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span>
+      </div>
+      <div id="translation-cal-grid" class="translation-cal-grid"></div>
+      <p id="translation-cal-detail" class="translation-cal-detail"></p>
+      <div class="app-dialog-actions translation-cal-actions">
+        <button type="button" class="btn" id="btn-translation-cal-close">关闭</button>
+        <button type="button" class="btn btn-primary" id="btn-translation-cal-share">分享打卡图</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="view-custom-text" class="view custom-text-view hidden" role="region" aria-labelledby="custom-text-dialog-title">
+    <header class="custom-text-page-bar">
+      <button type="button" class="btn btn-ghost btn-compact" id="btn-custom-text-back" title="返回练习">返回</button>
+      <h1 id="custom-text-dialog-title" class="custom-text-page-title">新增英语文本</h1>
+    </header>
+    <p class="app-dialog-desc" id="custom-text-dialog-desc">可粘贴英文后保存自动成意群，或导入 SRT/TXT。TXT 支持「英文下一行中文」或「中文下一行英文」对照导入；纯中文只切意群不自动译英。再次导入会覆盖当前文本。需要补英文时点「译英」。</p>
+    <input type="hidden" id="custom-text-edit-num" value="" />
+    <div class="custom-text-import-row">
+      <input
+        type="file"
+        id="custom-text-srt-file"
+        class="sr-only"
+        accept=".srt,.txt,text/plain,*/*"
+      />
+      <button type="button" class="btn btn-ghost btn-compact" id="btn-custom-text-import-srt" title="导入文本（覆盖当前；SRT 或中文 TXT；不自动译英）">
+        导入文本
+      </button>
+      <span class="custom-text-import-hint" id="custom-text-srt-hint" aria-live="polite"></span>
+    </div>
+    <div class="translate-engine-bar" id="translate-engine-bar">
+      <label class="app-dialog-field translate-engine-field" for="translate-engine-mode">
+        翻译引擎
+        <select id="translate-engine-mode" aria-label="翻译引擎">
+          <option value="online">在线</option>
+          <option value="deepseek">DeepSeek</option>
+          <option value="local">本地模型</option>
+        </select>
+      </label>
+      <label class="app-dialog-field translate-engine-field translate-deepseek-key-field hidden" id="translate-deepseek-key-wrap" for="translate-deepseek-key">
+        DeepSeek API Key
+        <input
+          id="translate-deepseek-key"
+          type="password"
+          inputmode="text"
+          autocomplete="off"
+          spellcheck="false"
+          maxlength="200"
+          placeholder="sk-…"
+          aria-label="DeepSeek API Key"
+        />
+      </label>
+      <label class="app-dialog-field translate-engine-field hidden" id="translate-engine-model-wrap" for="translate-engine-model">
+        本地模型
+        <select id="translate-engine-model" aria-label="本地翻译模型"></select>
+      </label>
+      <span class="translate-engine-status" id="translate-engine-status" aria-live="polite">当前：在线（MyMemory → Google）</span>
+    </div>
+    <label class="app-dialog-field" for="custom-text-name">
+      标题（可选）
+      <input id="custom-text-name" type="text" maxlength="80" placeholder="不填则用首条英文" autocomplete="off" />
+    </label>
+    <label class="app-dialog-field hidden" id="custom-text-body-field" for="custom-text-body">
+      粘贴英文（保存后自动成意群）
+      <textarea
+        id="custom-text-body"
+        class="custom-text-body"
+        rows="8"
+        placeholder="粘贴英语文本。可用换行或 / 手动切意群；否则自动按句切分。有对照面板时无需再填。"
+        spellcheck="false"
+      ></textarea>
+    </label>
+    <div id="custom-text-pairs-wrap" class="custom-text-pairs-wrap hidden">
+      <div class="custom-text-pairs-hd">
+        <span>意群对照（左中文 · 右英文）</span>
+        <div class="custom-text-pairs-hd-actions">
+          <button type="button" class="btn btn-ghost btn-compact" id="btn-retranslate-en" title="只把有改动的意群按当前引擎译英，未改动的保持不动">
+            译英
+          </button>
+          <span class="custom-text-pairs-tip" id="custom-text-autosave-tip">只译动过的意群：合并 / 拆分 / 改写中文会实时译英，其余保持不动</span>
+        </div>
+      </div>
+      <div id="custom-text-pairs" class="custom-text-pairs" role="list"></div>
+    </div>
+  </div>
+
+  <div id="camera-setup-dialog" class="app-dialog hidden" role="dialog" aria-modal="true" aria-labelledby="camera-setup-title">
+    <div class="app-dialog-card camera-setup-card">
+      <h3 id="camera-setup-title">开始录像</h3>
+      <p class="app-dialog-desc">选择分辨率与帧率后开始。保存为 MP4。</p>
+      <label class="app-dialog-field" for="camera-setup-res">
+        分辨率
+        <select id="camera-setup-res" aria-label="录像分辨率">
+          <option value="480p">640×480（480p）</option>
+          <option value="720p" selected>1280×720（720p）</option>
+          <option value="1080p">1920×1080（1080p）</option>
+        </select>
+      </label>
+      <label class="app-dialog-field" for="camera-setup-fps">
+        帧率
+        <select id="camera-setup-fps" aria-label="录像帧率">
+          <option value="15">15 fps</option>
+          <option value="24">24 fps</option>
+          <option value="30" selected>30 fps</option>
+        </select>
+      </label>
+      <div class="app-dialog-actions">
+        <button type="button" class="btn btn-ghost" id="btn-camera-setup-cancel">取消</button>
+        <button type="button" class="btn btn-primary" id="btn-camera-setup-confirm">开始录像</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="translation-jump-dialog" class="app-dialog hidden" role="dialog" aria-modal="true" aria-labelledby="translation-jump-title">
+    <div class="app-dialog-card translation-jump-card">
+      <h3 id="translation-jump-title">跳转意群</h3>
+      <p class="app-dialog-desc" id="translation-jump-desc">输入要去的意群序号</p>
+      <label class="app-dialog-field" for="translation-jump-input">
+        意群序号
+        <input id="translation-jump-input" type="number" min="1" step="1" inputmode="numeric" autocomplete="off" />
+      </label>
+      <div class="app-dialog-actions">
+        <button type="button" class="btn btn-ghost" id="btn-translation-jump-cancel">取消</button>
+        <button type="button" class="btn btn-primary" id="btn-translation-jump-confirm">跳转</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="view-wordbook" class="view wordbook-view hidden" role="region" aria-labelledby="wordbook-title">
+    <header class="custom-text-page-bar">
+      <button type="button" class="btn btn-ghost btn-compact" id="btn-wordbook-close" title="返回练习">返回</button>
+      <h1 id="wordbook-title" class="custom-text-page-title">词典</h1>
+    </header>
+    <p class="app-dialog-desc">点英文单词，在气泡里选「添加」。一边点「生成密钥」→「复制」（本机自动填入，剪贴板可发给对方），另一边粘贴同一条后点「同步」；只取并集，删词不会传到另一边。</p>
+    <div id="wordbook-setup">
+      <label class="app-dialog-field" for="wordbook-generated">
+        随机密钥
+        <input
+          id="wordbook-generated"
+          class="wordbook-generated"
+          type="text"
+          readonly
+          autocomplete="off"
+          spellcheck="false"
+          autocapitalize="off"
+          placeholder="点「生成密钥」"
+        />
+      </label>
+      <div class="custom-text-import-row wordbook-sync-row">
+        <button type="button" class="btn btn-ghost btn-compact" id="btn-wordbook-generate" title="用系统随机数生成一条密钥">
+          生成密钥
+        </button>
+        <button type="button" class="btn btn-ghost btn-compact" id="btn-wordbook-copy" title="填入本机并复制，再发给另一台">
+          复制
+        </button>
+        <button type="button" class="btn btn-ghost btn-compact" id="btn-wordbook-share" title="填入本机并用系统分享发给另一台">
+          发给对方
+        </button>
+      </div>
+      <label class="app-dialog-field" for="wordbook-secret" id="wordbook-secret-field">
+        粘贴密钥
+        <input
+          id="wordbook-secret"
+          type="text"
+          autocomplete="off"
+          spellcheck="false"
+          autocapitalize="off"
+          placeholder="生成侧点复制会自动填入；另一台粘贴这里"
+        />
+      </label>
+    </div>
+    <div class="custom-text-import-row wordbook-sync-row">
+      <button type="button" class="btn btn-ghost btn-compact" id="btn-wordbook-sync" title="用同一条密钥联网并集合并">
+        同步
+      </button>
+      <button type="button" class="btn btn-ghost btn-compact hidden" id="btn-wordbook-logout" title="清除本机保存的密钥，词仍保留">
+        清除密钥
+      </button>
+    </div>
+    <p id="wordbook-sync-status" class="wordbook-count" hidden></p>
+    <label class="app-dialog-field" for="wordbook-search">
+      查找
+      <input id="wordbook-search" type="search" inputmode="search" placeholder="单词或释义…" autocomplete="off" />
+    </label>
+    <p id="wordbook-count" class="wordbook-count" hidden></p>
+    <p id="wordbook-empty" class="wordbook-empty">还没有词。先点课文里的英文单词，再点「添加」。</p>
+    <div id="wordbook-list" class="wordbook-list"></div>
+  </div>
+
+  <div id="view-read-voice" class="view read-voice-view hidden" role="region" aria-labelledby="read-voice-title">
+    <header class="custom-text-page-bar">
+      <button type="button" class="btn btn-ghost btn-compact" id="btn-read-voice-cancel" title="返回练习">返回</button>
+      <h1 id="read-voice-title" class="custom-text-page-title">音色</h1>
+      <button type="button" class="btn btn-ghost btn-compact" id="btn-read-voice-confirm" title="使用选中的音色">确定</button>
+    </header>
+    <p class="app-dialog-desc" id="read-voice-desc"></p>
+    <div id="read-voice-list" class="read-voice-list" role="radiogroup" aria-label="朗读声音"></div>
+  </div>
+
+  <div id="read-jump-dialog" class="app-dialog hidden" role="dialog" aria-modal="true" aria-labelledby="read-jump-title">
+    <div class="app-dialog-card translation-jump-card">
+      <h3 id="read-jump-title">朗读起点</h3>
+      <p class="app-dialog-desc" id="read-jump-desc">输入要从哪个意群开始朗读</p>
+      <label class="app-dialog-field" for="read-jump-input">
+        意群序号
+        <input id="read-jump-input" type="number" min="1" step="1" inputmode="numeric" autocomplete="off" />
+      </label>
+      <div class="app-dialog-actions">
+        <button type="button" class="btn btn-ghost" id="btn-read-jump-cancel">取消</button>
+        <button type="button" class="btn btn-primary" id="btn-read-jump-confirm">从这里读</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="practice-jump-dialog" class="app-dialog hidden" role="dialog" aria-modal="true" aria-labelledby="practice-jump-title">
+    <div class="app-dialog-card practice-jump-card">
+      <h3 id="practice-jump-title">跳转题目</h3>
+      <p class="app-dialog-desc" id="practice-jump-desc">选择本题库下的题号与题目</p>
+      <label class="app-dialog-field" for="practice-jump-search">
+        搜索
+        <div class="practice-jump-search-wrap">
+          <span class="practice-jump-hash" aria-hidden="true">#</span>
+          <input id="practice-jump-search" type="text" inputmode="search" placeholder="题号或题目…" autocomplete="off" />
+        </div>
+      </label>
+      <label class="app-dialog-field" for="practice-jump-select">
+        题目列表
+        <select id="practice-jump-select" class="practice-jump-select" size="6" aria-label="题目列表"></select>
+      </label>
+      <div class="app-dialog-actions">
+        <button type="button" class="btn btn-ghost" id="btn-practice-jump-cancel">取消</button>
+        <button type="button" class="btn btn-primary" id="btn-practice-jump-confirm">跳转</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="translate-slow-dialog" class="app-dialog hidden" role="dialog" aria-modal="true" aria-labelledby="translate-slow-title">
+    <div class="app-dialog-card">
+      <h3 id="translate-slow-title">在线翻译偏慢</h3>
+      <p class="app-dialog-desc" id="translate-slow-desc">在线翻译较慢，是否切换到本地模型？</p>
+      <div class="app-dialog-actions" style="flex-wrap: wrap; gap: 0.45rem;">
+        <button type="button" class="btn btn-ghost" id="btn-translate-slow-never">不再询问</button>
+        <button type="button" class="btn btn-ghost" id="btn-translate-slow-stay">继续在线</button>
+        <button type="button" class="btn btn-primary" id="btn-translate-slow-switch">切换本地</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+  <script type="module" src="./js/app.js?v=20261006audio"></script>
+</body>
+</html>

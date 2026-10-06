@@ -1,0 +1,19 @@
+{
+  "appId": "com.jinbaoli.biyixunlian",
+  "appName": "译",
+  "webDir": "../www",
+  "appendUserAgent": " Edg/143.0.0.0",
+  "server": {
+    "androidScheme": "https"
+  },
+  "ios": {
+    "contentInset": "never",
+    "preferredContentMode": "mobile",
+    "scrollEnabled": true
+  },
+  "plugins": {
+    "Keyboard": {
+      "resize": "none"
+    }
+  }
+}

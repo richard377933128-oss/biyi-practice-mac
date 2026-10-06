@@ -1,0 +1,70 @@
+{
+  "name": "biyi-practice",
+  "version": "1.0.0",
+  "description": "笔译训练 — 轻量意群中译英",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --mac --arm64",
+    "build:dir": "electron-builder --mac --arm64 --dir",
+    "build:win": "electron-builder --win --x64"
+  },
+  "build": {
+    "appId": "com.jinbaoli.biyipractice",
+    "productName": "译",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "package.json",
+      "edge-tts-node.mjs",
+      "scripts/ime.py",
+      "scripts/ime-win.py"
+    ],
+    "extraResources": [
+      {
+        "from": "../www",
+        "to": "www",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "scripts/ime.py",
+        "to": "ime.py"
+      },
+      {
+        "from": "scripts/ime-win.py",
+        "to": "ime-win.py"
+      }
+    ],
+    "mac": {
+      "icon": "assets/icon.png",
+      "category": "public.app-category.education",
+      "identity": null,
+      "target": [
+        "dir"
+      ]
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "shortcutName": "笔译训练"
+    }
+  },
+  "devDependencies": {
+    "electron": "^33.4.11",
+    "electron-builder": "^25.1.8"
+  }
+}

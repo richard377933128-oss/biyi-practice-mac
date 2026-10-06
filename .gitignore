@@ -1,0 +1,55 @@
+# Dependencies
+node_modules/
+
+# Build / packaging artifacts
+desktop/dist/
+mobile/build/
+*.ipa
+*.xcarchive
+*.dSYM
+*.app
+
+# iOS / Xcode
+mobile/ios/DerivedData/
+mobile/ios/App/Pods/
+mobile/ios/App/App/public/
+**/xcuserdata/
+*.xcuserstate
+*.mobileprovision
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+*.p8
+*.pem
+*.key
+AuthKey_*.p8
+credentials.json
+**/private_keys/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*~
+
+# Logs / caches
+*.log
+npm-debug.log*
+.cache/
+cache/tts/
+
+# 本地翻译模型体积大，用 scripts/fetch-translate-models.sh 拉取后打进 iOS
+www/models/**
+!www/models/README.md
+www/js/vendor/transformers/*.map
+
