@@ -13,12 +13,14 @@ import { join, relative } from "node:path";
 
 const ROOT = new URL("..", import.meta.url).pathname;
 const WWW = join(ROOT, "www");
-const VERSION_RE = /\?v=[A-Za-z0-9._-]+/g;
+// 只匹配路径字符串里的版本标记（./xxx.js?v= 或 /xxx?v=），
+// 避免误伤压缩代码里的三元表达式（如 lame.min.js 的 ?v=3*d/2，2026-10-09 事故）
+const VERSION_RE = /(\/[\w./-]*)\?v=[A-Za-z0-9._-]+/g;
 
 function walk(dir) {
   const out = [];
   for (const name of readdirSync(dir)) {
-    if (name === ".DS_Store") continue;
+    if (name === ".DS_Store" || name === "vendor") continue; // 第三方压缩文件不碰
     const full = join(dir, name);
     if (statSync(full).isDirectory()) out.push(...walk(full));
     else if (/\.(js|html)$/.test(name)) out.push(full);
@@ -44,7 +46,7 @@ for (const file of files) {
   const count = (src.match(VERSION_RE) || []).length;
   if (!count) continue;
   total += count;
-  const next = src.replace(VERSION_RE, `?v=${version}`);
+  const next = src.replace(VERSION_RE, `$1?v=${version}`);
   if (next !== src) {
     writeFileSync(file, next);
     changed += 1;

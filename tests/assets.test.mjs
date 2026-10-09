@@ -7,7 +7,8 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const WWW = join(ROOT, "www");
-const VERSION_RE = /\?v=([A-Za-z0-9._-]+)/g;
+// 与 scripts/bump-version.mjs 同规：只认路径字符串里的 ?v=（带 / 前缀），避免误伤三元表达式
+const VERSION_RE = /\/[\w./-]*\?v=([A-Za-z0-9._-]+)/g;
 
 function walk(dir) {
   const out = [];
