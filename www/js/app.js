@@ -1,9 +1,10 @@
-import { bindVoiceMemo } from "./voice-memo.js?v=20261009lib";
-import { createTranslation } from "./translation.js?v=20261009lib";
-import { createScreenRecord } from "./screen-record.js?v=20261009lib";
-import { createSystemCamera } from "./system-camera.js?v=20261009lib";
-import { createEdgeSpeech, getTtsEngine, setTtsEngine, getSavedVoice, setSavedVoice, ROTATE_VOICE, isRotateVoice, rotateVoiceAt, peekRotateVoice } from "./edge-tts.js?v=20261009lib";
-import { isLockStressOn, setLockStressOn } from "./lock-screen.js?v=20261009lib";
+import "./error-trap.js?v=20261009perf"; // 全局错误兜底，必须第一个 import
+import { initKvStore } from "./lib/kv-store.js?v=20261009perf";
+import { bindVoiceMemo } from "./voice-memo.js?v=20261009perf";
+import { createTranslation } from "./translation.js?v=20261009perf";
+// screen-record.js / system-camera.js 合计约 3700 行，启动时动态加载（见 boot() 末尾）
+import { createEdgeSpeech, getTtsEngine, setTtsEngine, getSavedVoice, setSavedVoice, ROTATE_VOICE, isRotateVoice, rotateVoiceAt, peekRotateVoice } from "./edge-tts.js?v=20261009perf";
+import { isLockStressOn, setLockStressOn } from "./lock-screen.js?v=20261009perf";
 import {
   CUSTOM_BANK_CODE,
   CUSTOM_ADD_CODE,
@@ -21,13 +22,13 @@ import {
   parseImportText,
   readSrtFile,
   titleFromSrtFileName,
-} from "./custom-texts.js?v=20261009lib";
+} from "./custom-texts.js?v=20261009perf";
 import {
   translateZhToEn,
   bindTranslateEngineUi,
   loadTranslatePrefs,
   polishAndTranslateZhLinesViaDeepSeek,
-} from "./en-zh.js?v=20261009lib";
+} from "./en-zh.js?v=20261009perf";
 import {
   lookupEnWord,
   showEnWordTip,
@@ -39,8 +40,8 @@ import {
   applyStressToWordEl,
   markStressOnWord,
   formatPhonetic,
-} from "./en-word-dict.js?v=20261009lib";
-import { addWord, hasWord, bindWordbook } from "./wordbook.js?v=20261009lib";
+} from "./en-word-dict.js?v=20261009perf";
+import { addWord, hasWord, bindWordbook } from "./wordbook.js?v=20261009perf";
 import {
   clampDictationTyped,
   autoAppendDictationExtras,
@@ -3406,6 +3407,13 @@ function onSenseGroupsChanged(q) {
 }
 
 async function boot() {
+  // 先把词库/自定义文本从 IndexedDB 加载进内存（并迁移旧 localStorage 数据），之后读写都是同步 API
+  await initKvStore([
+    "pte_custom_texts",
+    "biyi_wordbook",
+    "biyi_wordbook_auth",
+    "biyi_wordbook_sync_at",
+  ]).catch(() => {});
   // 尽早预热离线词典，意群进页即可标重音
   warmEnDict().catch(() => {});
   translationApi = createTranslation({
@@ -3431,8 +3439,19 @@ async function boot() {
     moveQuestion: (delta) => move(delta),
   });
   translationApi.bindTranslation();
-  createScreenRecord({ $, toast });
-  createSystemCamera({ $, toast });
+  // 录屏/相机共约 3700 行，不进首屏解析：空闲时后台加载并绑定
+  const idle = window.requestIdleCallback || ((fn) => setTimeout(fn, 300));
+  idle(() => {
+    Promise.all([
+      import("./screen-record.js?v=20261009perf"),
+      import("./system-camera.js?v=20261009perf"),
+    ])
+      .then(([sr, sc]) => {
+        sr.createScreenRecord({ $, toast });
+        sc.createSystemCamera({ $, toast });
+      })
+      .catch((err) => console.warn("录屏/相机模块加载失败", err));
+  });
 
   state.translation.on = true;
   $("#view-practice")?.classList.add("translation-on");

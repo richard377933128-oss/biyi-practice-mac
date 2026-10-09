@@ -327,7 +327,7 @@ import {
   primaryStressIndex,
   syllabifyOrtho,
   markStressOnWord,
-} from "./lib/stress.js?v=20261009lib";
+} from "./lib/stress.js?v=20261009perf";
 export { formatPhonetic, primaryStressIndex, syllabifyOrtho, markStressOnWord };
 
 /** 把重音标到点词按钮上（dataset.word 仍是原词，供朗读） */

@@ -1,5 +1,5 @@
-import { translateEnLinesToZh, translateZhLinesToEn } from "./en-zh.js?v=20261009lib";
-import { deleteSpeechClips, speechCacheKey } from "./tts-cache.js?v=20261009lib";
+import { translateEnLinesToZh, translateZhLinesToEn } from "./en-zh.js?v=20261009perf";
+import { deleteSpeechClips, speechCacheKey } from "./tts-cache.js?v=20261009perf";
 
 const STORAGE_KEY = "pte_custom_texts";
 export const CUSTOM_BANK_CODE = "CUSTOM";
@@ -474,7 +474,7 @@ function titleFromSrtFileName(name) {
 
 function loadRawList() {
   try {
-    const raw = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+    const raw = JSON.parse(kvGet(STORAGE_KEY) || "[]");
     if (!Array.isArray(raw)) return [];
     return raw
       .map((item, i) => {
@@ -500,12 +500,10 @@ function loadRawList() {
 }
 
 function saveRawList(list) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(list || []));
-  } catch (_) {}
+  kvSet(STORAGE_KEY, JSON.stringify(list || []));
 }
 
-/** 把安装包里的自定义文章 seed 合并进 localStorage（按 id；同名旧稿若缺首句英文也会修好） */
+/** 把安装包里的自定义文章 seed 合并进 KV 存储（按 id；同名旧稿若缺首句英文也会修好） */
 let seedMergePromise = null;
 export async function ensureCustomTextsSeedMerged() {
   if (seedMergePromise) return seedMergePromise;

@@ -1,5 +1,7 @@
 /** 个人难词本：点单词气泡「添加」后可随时在「词典」里查 */
 
+import { kvGet, kvSet, kvRemove } from "./lib/kv-store.js?v=20261009perf";
+
 const KEY = "biyi_wordbook";
 const AUTH_KEY = "biyi_wordbook_auth";
 const SYNC_AT_KEY = "biyi_wordbook_sync_at";
@@ -18,7 +20,7 @@ function normalize(word) {
 
 function readRaw() {
   try {
-    const raw = JSON.parse(localStorage.getItem(KEY) || "[]");
+    const raw = JSON.parse(kvGet(KEY) || "[]");
     if (!Array.isArray(raw)) return [];
     return raw;
   } catch (_) {
@@ -58,15 +60,8 @@ export function listWords() {
 
 function saveWords(list, { toast } = {}) {
   const clipped = list.map(compact);
-  try {
-    localStorage.setItem(KEY, JSON.stringify(clipped));
-    return true;
-  } catch (err) {
-    if (err && (err.name === "QuotaExceededError" || err.code === 22)) {
-      toast?.("本机储存已满，先删一些词再添加");
-    }
-    return false;
-  }
+  kvSet(KEY, JSON.stringify(clipped));
+  return true;
 }
 
 export function hasWord(word) {
@@ -239,20 +234,14 @@ async function shareSecret(text) {
 }
 
 function readAuthHex() {
-  try {
-    const hex = String(localStorage.getItem(AUTH_KEY) || "").trim().toLowerCase();
-    return /^[0-9a-f]{64}$/.test(hex) ? hex : "";
-  } catch (_) {
-    return "";
-  }
+  const hex = String(kvGet(AUTH_KEY) || "").trim().toLowerCase();
+  return /^[0-9a-f]{64}$/.test(hex) ? hex : "";
 }
 
 function saveAuthHex(authHex) {
-  try {
-    if (authHex) localStorage.setItem(AUTH_KEY, authHex);
-    else localStorage.removeItem(AUTH_KEY);
-    localStorage.removeItem("biyi_wordbook_account");
-  } catch (_) {}
+  if (authHex) kvSet(AUTH_KEY, authHex);
+  else kvRemove(AUTH_KEY);
+  kvRemove("biyi_wordbook_account");
 }
 
 export function clearSavedSecret() {
@@ -260,14 +249,12 @@ export function clearSavedSecret() {
 }
 
 function readSyncAt() {
-  const n = Number(localStorage.getItem(SYNC_AT_KEY) || 0);
+  const n = Number(kvGet(SYNC_AT_KEY) || 0);
   return Number.isFinite(n) ? n : 0;
 }
 
 function saveSyncAt(ts = Date.now()) {
-  try {
-    localStorage.setItem(SYNC_AT_KEY, String(ts));
-  } catch (_) {}
+  kvSet(SYNC_AT_KEY, String(ts));
 }
 
 function formatSyncAt(ts) {

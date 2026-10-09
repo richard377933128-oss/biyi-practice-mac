@@ -392,7 +392,7 @@ async function loadTransformers() {
   if (!transformersReady) {
     transformersReady = (async () => {
       // 使用自包含 bundle（内联 onnxruntime），避免 WKWebView 无法解析裸模块名
-      const mod = await import(`./vendor/transformers/transformers.bundle.js?v=20261009lib`);
+      const mod = await import(`./vendor/transformers/transformers.bundle.js?v=20261009perf`);
       const { env } = mod;
       env.allowLocalModels = true;
       env.allowRemoteModels = false;
