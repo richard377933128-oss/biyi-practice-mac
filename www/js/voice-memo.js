@@ -1,8 +1,7 @@
-/** 顶栏录音：开始 → 暂停 → 继续 → 完成，完成后下载到本机。 */
+/** 顶栏录音：单击 开始 → 暂停 → 继续，双击完成，完成后下载到本机（交互同全文朗读）。 */
 
 export function bindVoiceMemo({ $, toast }) {
   const btn = $("#btn-voice-memo");
-  const doneBtn = $("#btn-voice-memo-done");
   if (!btn || btn.dataset.bound === "1") return;
   btn.dataset.bound = "1";
 
@@ -45,10 +44,9 @@ export function bindVoiceMemo({ $, toast }) {
     const time = timerEl();
     btn.classList.toggle("is-recording", phase === "recording");
     btn.classList.toggle("is-paused", phase === "paused");
-    if (doneBtn) doneBtn.hidden = phase === "idle";
     if (phase === "idle") {
       if (label) label.textContent = "录音";
-      btn.title = "开始录音";
+      btn.title = "开始录音（录音中单击暂停/继续，双击完成）";
       if (time) {
         time.hidden = true;
         time.textContent = "0:00";
@@ -56,7 +54,7 @@ export function bindVoiceMemo({ $, toast }) {
       return;
     }
     if (label) label.textContent = phase === "recording" ? "暂停" : "继续";
-    btn.title = phase === "recording" ? "暂停录音" : "继续录音";
+    btn.title = "单击暂停/继续，双击完成录音";
     if (time) time.hidden = false;
     tick();
   }
@@ -424,12 +422,26 @@ export function bindVoiceMemo({ $, toast }) {
     }
   }
 
+  // 单击暂停/继续（延迟执行以区分双击），双击完成
+  const DBLCLICK_MS = 260;
+  let clickTimer = 0;
   btn.addEventListener("click", () => {
-    if (phase === "idle") start().catch((err) => console.warn(err));
-    else if (phase === "recording") pause();
-    else resume();
+    if (phase === "idle") {
+      start().catch((err) => console.warn(err));
+      return;
+    }
+    if (clickTimer) {
+      clearTimeout(clickTimer);
+      clickTimer = 0;
+      finish();
+      return;
+    }
+    clickTimer = setTimeout(() => {
+      clickTimer = 0;
+      if (phase === "recording") pause();
+      else if (phase === "paused") resume();
+    }, DBLCLICK_MS);
   });
-  doneBtn?.addEventListener("click", () => finish());
 
   // 切后台、锁屏、退出应用时自动暂停录音
   document.addEventListener("visibilitychange", () => {
