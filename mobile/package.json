@@ -5,6 +5,8 @@
   "private": true,
   "scripts": {
     "sync": "bash scripts/sync-ios.sh",
+    "install:ios": "bash scripts/install-ios.sh",
+    "install:ios:fast": "bash scripts/install-ios.sh --no-sync",
     "open": "npx cap open ios"
   },
   "dependencies": {

@@ -35,7 +35,7 @@
       font-display: swap;
     }
   </style>
-  <link rel="stylesheet" href="./css/app.css?v=20261006audio" />
+  <link rel="stylesheet" href="./css/app.css?v=20261009lib" />
 </head>
 <body>
   <main id="view-practice" class="view translation-on">
@@ -46,15 +46,59 @@
       </div>
       <div class="topbar-right">
         <div class="topbar-actions">
+          <button type="button" class="btn btn-ghost btn-compact voice-memo-btn system-camera-btn" data-system-camera title="开始悬浮录像">
+            <span data-camera-btn-label>录像</span>
+            <span data-camera-btn-timer hidden>0:00</span>
+          </button>
           <button type="button" class="btn btn-ghost btn-compact voice-memo-btn" id="btn-voice-memo" title="开始录音">
             <span data-voice-memo-label>录音</span>
             <span data-voice-memo-timer hidden>0:00</span>
           </button>
           <button type="button" class="btn btn-ghost btn-compact" id="btn-voice-memo-done" hidden title="完成录音">完成</button>
           <button type="button" class="btn btn-ghost btn-compact" id="btn-voice-pick" title="选择朗读音色（全局：全文、意群、笔译）">音色</button>
-          <button type="button" class="btn btn-ghost btn-compact" id="btn-wordbook" title="查看已添加的难读单词">词典</button>
-          <button type="button" class="btn btn-ghost btn-compact" id="btn-custom-text-add" title="新增英语文本">新增文本</button>
-          <button type="button" class="btn btn-ghost btn-compact" id="btn-custom-text-edit" title="编辑当前文本">编辑文本</button>
+          <button type="button" class="btn btn-ghost btn-compact" id="btn-bank-playlist" title="列表播放：单击暂停/继续，双击结束（声音用「音色」设定）">播放</button>
+          <div class="topbar-more" id="topbar-more">
+            <button type="button" class="btn btn-ghost btn-compact topbar-more-trigger" id="btn-topbar-more" title="更多" aria-haspopup="menu" aria-expanded="false">更多</button>
+            <div class="topbar-more-panel" id="topbar-more-panel" role="menu">
+              <button type="button" class="btn btn-ghost btn-compact" id="btn-wordbook" title="查看已添加的难读单词" role="menuitem">词典</button>
+              <div class="topbar-text-pick" id="topbar-text-pick">
+                <button type="button" class="btn btn-ghost btn-compact topbar-text-trigger" id="btn-topbar-text" title="文本" aria-haspopup="menu" aria-expanded="false">文本 ▾</button>
+                <div class="topbar-text-menu" id="topbar-text-menu" role="menu" hidden>
+                  <button type="button" class="topbar-text-item" id="btn-custom-text-add" role="menuitem" title="新增英语文本">新增文本</button>
+                  <button type="button" class="topbar-text-item" id="btn-custom-text-edit" role="menuitem" title="编辑当前文本">编辑当前</button>
+                </div>
+              </div>
+              <div class="topbar-font-actions" aria-label="练习字体">
+                <label class="topbar-font-slot">
+                  <span class="sr-only">中文字体</span>
+                  <select data-screen-lead-font aria-label="中文字体">
+                    <option value="fzxingkai" selected>行楷</option>
+                    <option value="nidemingzi">名字</option>
+                    <option value="kaiti">楷体</option>
+                    <option value="songti">宋体</option>
+                    <option value="heiti">黑体</option>
+                    <option value="pingfang">苹方</option>
+                    <option value="yuanti">圆体</option>
+                  </select>
+                </label>
+                <label class="topbar-font-slot">
+                  <span class="sr-only">英文字体</span>
+                  <select data-screen-en-font aria-label="英文字体">
+                    <option value="mono" selected>等宽</option>
+                    <option value="georgia">Georgia</option>
+                    <option value="times">Times</option>
+                    <option value="palatino">Palatino</option>
+                    <option value="italic">Italic</option>
+                    <option value="garamond">Garamond</option>
+                    <option value="cambria">Cambria</option>
+                    <option value="calibri">Calibri</option>
+                    <option value="verdana">Verdana</option>
+                    <option value="arial">Arial</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+          </div>
         </div>
         <label class="bank-wrap">
           <span class="sr-only">题库</span>
@@ -65,35 +109,48 @@
 
     <section class="practice-body">
       <div class="fold-pair">
-        <div class="sense-section" id="sense-section">
-          <button
-            type="button"
-            class="sense-fold-btn"
-            id="btn-sense-fold"
-            aria-expanded="true"
-            aria-controls="sense-block"
-            title="折叠 / 展开意群"
-          >
-            <span class="sense-fold-label">意群</span>
-            <span class="sense-fold-meta" id="sense-fold-meta"></span>
-            <span class="sense-fold-chevron" aria-hidden="true">▾</span>
-          </button>
+        <div class="sense-section is-collapsed" id="sense-section">
+          <div class="en-full-hd">
+            <button
+              type="button"
+              class="sense-fold-btn"
+              id="btn-sense-fold"
+              aria-expanded="false"
+              aria-controls="sense-block"
+              title="展开意群"
+            >
+              <span class="sense-fold-label">意群</span>
+              <span class="sense-fold-meta" id="sense-fold-meta"></span>
+              <span class="sense-fold-chevron" aria-hidden="true">▾</span>
+            </button>
+            <div class="en-full-actions">
+              <button
+                type="button"
+                class="en-full-play-btn"
+                id="btn-sense-play"
+                hidden
+                title="意群顺序循环朗读（音色在顶部「音色」里选）"
+              >
+                意群朗读
+              </button>
+            </div>
+          </div>
           <div
             id="sense-block"
-            class="sense-block sense-pager"
-            aria-label="意群，左右滑动翻页"
+            class="sense-block sense-scroll"
+            aria-label="意群，上下滑动浏览"
           ></div>
         </div>
 
-        <div class="en-full-section" id="en-full-section">
+        <div class="en-full-section is-collapsed" id="en-full-section">
           <div class="en-full-hd">
             <button
               type="button"
               class="sense-fold-btn"
               id="btn-en-full-fold"
-              aria-expanded="true"
+              aria-expanded="false"
               aria-controls="en-full-block"
-              title="折叠全文"
+              title="展开全文"
             >
               <span class="sense-fold-label">全文</span>
               <span class="sense-fold-meta" id="en-full-fold-meta"></span>
@@ -102,34 +159,10 @@
             <div class="en-full-actions">
               <button
                 type="button"
-                class="en-full-play-btn en-full-dl-btn"
-                id="btn-en-full-import"
-                hidden
-                title="导入本机整篇文章音频；有导入时全文朗读优先播它"
-              >
-                导入全文音频
-              </button>
-              <input
-                id="en-full-audio-file"
-                type="file"
-                accept="audio/*,.mp3,.m4a,.aac,.wav,.ogg,.flac,.mp4"
-                hidden
-              />
-              <button
-                type="button"
-                class="en-full-play-btn en-full-dl-btn"
-                id="btn-en-full-dl"
-                hidden
-                title="把全文的联网朗读音频提前存到本机，之后锁屏、离线也能连续播放"
-              >
-                下载全文音频
-              </button>
-              <button
-                type="button"
                 class="en-full-play-btn"
                 id="btn-en-full-play"
                 hidden
-                title="朗读全文（音色在顶部「音色」里选）"
+                title="单篇文章循环朗读（音色在顶部「音色」里选）"
               >
                 全文朗读
               </button>
@@ -152,6 +185,11 @@
           <span class="sense-fold-meta" id="translation-fold-meta"></span>
           <span class="sense-fold-chevron" aria-hidden="true">▾</span>
         </button>
+        <div
+          id="translation-swipe-zone"
+          class="translation-swipe-zone"
+          aria-label="笔译收起后，在此左右滑动切换题目"
+        ></div>
         <div id="translation-fold-body" class="translation-fold-body">
         <div class="passage-toolbar">
           <div class="translation-prompt" id="translation-lead" aria-live="polite"></div>
@@ -162,7 +200,7 @@
         <p class="zh hidden" id="zh-text" aria-hidden="true"></p>
 
         <div class="translation-daily-banner" id="translation-tool-bar">
-          <div class="translation-daily-banner-top">
+          <div class="translation-tool-bar-stats">
             <button
               type="button"
               class="translation-daily-banner-btn"
@@ -175,53 +213,44 @@
                 <span class="translation-daily-banner-unit">词</span>
               </span>
             </button>
-            <div class="translation-daily-banner-ctas">
+            <button
+              type="button"
+              class="translation-daily-banner-cta"
+              id="btn-translation-daily"
+              title="查看每日笔译词数日历"
+            >日历</button>
+          </div>
+          <div class="passage-toolbar-switches translation-tool-bar-actions">
+            <div class="passage-toolbar-switches-inner">
               <button
                 type="button"
-                class="translation-daily-banner-cta"
-                id="btn-translation-daily"
-                title="查看每日笔译词数日历"
-              >日历</button>
-            </div>
-          </div>
-          <div class="passage-toolbar-switches">
-            <div class="passage-toolbar-switches-inner">
-            <button
-              type="button"
-              class="dictation-switch system-camera-btn"
-              data-system-camera
-              role="switch"
-              aria-label="开始悬浮录像"
-              title="开始悬浮录像"
-              aria-pressed="false"
-            >
-              <span class="dictation-switch-label">录像</span>
-              <span class="dictation-switch-ui" aria-hidden="true"></span>
-              <span class="voice-record-icon-timer" data-camera-btn-timer hidden>0:00</span>
-            </button>
-            <button
-              type="button"
-              class="dictation-switch screen-record-switch"
-              data-screen-record
-              role="switch"
-              aria-label="开始录屏"
-              title="开始录屏"
-              aria-pressed="false"
-            >
-              <span class="dictation-switch-label">录屏</span>
-              <span class="dictation-switch-ui" aria-hidden="true"></span>
-              <span class="voice-record-icon-timer" data-screen-record-timer hidden>0:00</span>
-            </button>
-            <label class="dictation-switch" data-switch="tts" title="笔译时朗读已输入的单词；声音在「全文朗读」里选">
-              <span class="dictation-switch-label">朗读</span>
-              <input type="checkbox" id="toggle-tts" role="switch" aria-label="笔译朗读" />
-              <span class="dictation-switch-ui" aria-hidden="true"></span>
-            </label>
-            <label class="dictation-switch" data-switch="answer" title="显示淡色笔译答案（录屏不收录）">
-              <span class="dictation-switch-label">答案</span>
-              <input type="checkbox" id="toggle-answer" role="switch" aria-label="显示笔译答案" />
-              <span class="dictation-switch-ui" aria-hidden="true"></span>
-            </label>
+                class="btn btn-ghost btn-compact voice-memo-btn"
+                data-screen-record
+                title="开始录屏"
+              >
+                <span data-screen-record-label>录屏</span>
+                <span data-screen-record-timer hidden>0:00</span>
+              </button>
+              <button
+                type="button"
+                class="btn btn-ghost btn-compact voice-memo-btn"
+                id="toggle-tts"
+                data-switch="tts"
+                title="笔译时朗读已输入的单词；声音在顶部「音色」里选"
+                aria-pressed="false"
+              >
+                <span data-tts-label>朗读</span>
+              </button>
+              <button
+                type="button"
+                class="btn btn-ghost btn-compact voice-memo-btn"
+                id="toggle-answer"
+                data-switch="answer"
+                title="显示淡色笔译答案（录屏不收录）"
+                aria-pressed="false"
+              >
+                <span data-answer-label>答案</span>
+              </button>
             </div>
           </div>
         </div>
@@ -264,86 +293,6 @@
           </div>
         </div>
 
-        <div class="screen-opts" aria-label="录屏选项">
-          <label class="screen-opt" title="画质">
-            <span class="screen-opt-label">画质</span>
-            <select data-screen-quality aria-label="录屏画质">
-              <option value="720p30">1280×720 · 30</option>
-              <option value="1080p30" selected>1920×1080 · 30</option>
-              <option value="1080p60">1920×1080 · 60</option>
-              <option value="portrait30">1080×1920 · 30</option>
-              <option value="1440p30">2560×1440 · 30</option>
-            </select>
-          </label>
-          <label class="screen-opt" title="中文字体">
-            <span class="screen-opt-label">中文字体</span>
-            <select data-screen-lead-font aria-label="中文字体">
-              <option value="fzxingkai" selected>行楷</option>
-              <option value="nidemingzi">名字</option>
-              <option value="kaiti">楷体</option>
-              <option value="songti">宋体</option>
-              <option value="heiti">黑体</option>
-              <option value="pingfang">苹方</option>
-              <option value="yuanti">圆体</option>
-            </select>
-          </label>
-          <label class="screen-opt" title="英文字体">
-            <span class="screen-opt-label">英文字体</span>
-            <select data-screen-en-font aria-label="英文字体">
-              <option value="mono" selected>等宽</option>
-              <option value="georgia">Georgia</option>
-              <option value="times">Times</option>
-              <option value="palatino">Palatino</option>
-              <option value="italic">Italic</option>
-              <option value="garamond">Garamond</option>
-              <option value="cambria">Cambria</option>
-              <option value="calibri">Calibri</option>
-              <option value="verdana">Verdana</option>
-              <option value="arial">Arial</option>
-            </select>
-          </label>
-          <label class="screen-opt" title="英文换行临界字号（像素）">
-            <span class="screen-opt-label">英文换行</span>
-            <input
-              type="number"
-              data-screen-en-wrap
-              inputmode="numeric"
-              min="24"
-              max="200"
-              step="1"
-              value="54"
-              aria-label="英文换行临界字号（像素）"
-            />
-          </label>
-          <label class="screen-opt" title="锁屏卡片要不要显示英文重音标记">
-            <span class="screen-opt-label">锁屏重音</span>
-            <select data-lock-stress aria-label="锁屏重音标记">
-              <option value="1" selected>有</option>
-              <option value="0">无</option>
-            </select>
-          </label>
-          <label class="screen-opt" title="录屏词数统计：有 / 无">
-            <span class="screen-opt-label">词数统计</span>
-            <select data-screen-words-badge aria-label="录屏词数统计">
-              <option value="1" selected>有</option>
-              <option value="0">无</option>
-            </select>
-          </label>
-          <label class="screen-opt" title="连续无操作多少秒后自动暂停录屏（步进 0.5；0=关闭）">
-            <span class="screen-opt-label">自动暂停</span>
-            <input
-              type="number"
-              class="screen-opt-spinner"
-              data-screen-idle-skip
-              inputmode="decimal"
-              min="0"
-              max="120"
-              step="0.5"
-              value="3"
-              aria-label="自动暂停秒数（步进 0.5）"
-            />
-          </label>
-        </div>
         </div>
 
       <div class="camera-float" data-camera-float hidden>
@@ -369,7 +318,7 @@
             <button type="button" class="camera-float-btn" data-camera-rerecord>重录</button>
           </div>
         </div>
-        <p class="camera-float-tip" data-camera-tip data-default-tip="点「录像」先选分辨率/帧率，保存为 MP4"></p>
+        <p class="camera-float-tip" data-camera-tip data-default-tip=""></p>
         <button
           type="button"
           class="camera-float-resize"
@@ -404,13 +353,16 @@
           <span class="screen-record-save-progress-pct" data-screen-record-progress-pct>0%</span>
         </div>
       </div>
-      <p class="hint-line" data-screen-record-tip>点「录屏」开始；再点暂停 → 底部「保存」到本地</p>
+      <p class="hint-line" data-screen-record-tip hidden>点「录屏」先选选项再开始；再点暂停 → 悬浮条「保存」到本地</p>
 
-      <div class="action-bar">
-        <button type="button" class="btn" id="btn-prev">上一题</button>
-        <button type="button" class="btn btn-primary" id="btn-next">下一题</button>
+      <p class="hint-line">↑↓ 切换意群 · 写错会拦住，连续错 3 次自动填入</p>
+      <div
+        id="practice-q-swipe"
+        class="practice-q-swipe"
+        aria-label="左右滑动切换题目"
+      >
+        <span class="practice-q-swipe-hint">左右滑切换题目</span>
       </div>
-      <p class="hint-line">↑↓ 切换意群 · ←→ 切换题目 · 写错会拦住，连续错 3 次自动填入</p>
       </div>
     </section>
   </main>
@@ -510,29 +462,65 @@
     </div>
   </div>
 
-  <div id="camera-setup-dialog" class="app-dialog hidden" role="dialog" aria-modal="true" aria-labelledby="camera-setup-title">
-    <div class="app-dialog-card camera-setup-card">
-      <h3 id="camera-setup-title">开始录像</h3>
-      <p class="app-dialog-desc">选择分辨率与帧率后开始。保存为 MP4。</p>
-      <label class="app-dialog-field" for="camera-setup-res">
-        分辨率
-        <select id="camera-setup-res" aria-label="录像分辨率">
-          <option value="480p">640×480（480p）</option>
-          <option value="720p" selected>1280×720（720p）</option>
-          <option value="1080p">1920×1080（1080p）</option>
-        </select>
-      </label>
-      <label class="app-dialog-field" for="camera-setup-fps">
-        帧率
-        <select id="camera-setup-fps" aria-label="录像帧率">
-          <option value="15">15 fps</option>
-          <option value="24">24 fps</option>
-          <option value="30" selected>30 fps</option>
-        </select>
-      </label>
+  <div id="screen-setup-dialog" class="app-dialog hidden" role="dialog" aria-modal="true" aria-labelledby="screen-setup-title">
+    <div class="app-dialog-card screen-setup-card">
+      <h3 id="screen-setup-title">开始录屏</h3>
+      <p class="app-dialog-desc">选择分辨率后开始。帧率按设备性能自动选择。再点「录屏」可暂停，用悬浮条保存。</p>
+      <div class="screen-opts screen-opts-dialog" aria-label="录屏选项">
+        <label class="screen-opt" title="分辨率（帧率自适应）">
+          <span class="screen-opt-label">分辨率</span>
+          <select data-screen-quality aria-label="录屏分辨率">
+            <option value="720p">1280×720</option>
+            <option value="1080p" selected>1920×1080</option>
+            <option value="1080x1920">1080×1920</option>
+            <option value="1440p">2560×1440</option>
+          </select>
+        </label>
+        <label class="screen-opt" title="英文换行临界字号（像素）">
+          <span class="screen-opt-label">英文换行</span>
+          <input
+            type="number"
+            data-screen-en-wrap
+            inputmode="numeric"
+            min="24"
+            max="200"
+            step="1"
+            value="54"
+            aria-label="英文换行临界字号（像素）"
+          />
+        </label>
+        <label class="screen-opt" title="锁屏卡片要不要显示英文重音标记">
+          <span class="screen-opt-label">锁屏重音</span>
+          <select data-lock-stress aria-label="锁屏重音标记">
+            <option value="1" selected>有</option>
+            <option value="0">无</option>
+          </select>
+        </label>
+        <label class="screen-opt" title="录屏词数统计：有 / 无">
+          <span class="screen-opt-label">词数统计</span>
+          <select data-screen-words-badge aria-label="录屏词数统计">
+            <option value="1" selected>有</option>
+            <option value="0">无</option>
+          </select>
+        </label>
+        <label class="screen-opt" title="连续无操作多少秒后自动暂停录屏（步进 0.5；0=关闭）">
+          <span class="screen-opt-label">自动暂停</span>
+          <input
+            type="number"
+            class="screen-opt-spinner"
+            data-screen-idle-skip
+            inputmode="decimal"
+            min="0"
+            max="120"
+            step="0.5"
+            value="3"
+            aria-label="自动暂停秒数（步进 0.5）"
+          />
+        </label>
+      </div>
       <div class="app-dialog-actions">
-        <button type="button" class="btn btn-ghost" id="btn-camera-setup-cancel">取消</button>
-        <button type="button" class="btn btn-primary" id="btn-camera-setup-confirm">开始录像</button>
+        <button type="button" class="btn btn-ghost" id="btn-screen-setup-cancel">取消</button>
+        <button type="button" class="btn btn-primary" id="btn-screen-setup-confirm">开始录屏</button>
       </div>
     </div>
   </div>
@@ -638,6 +626,31 @@
     </div>
   </div>
 
+  <div id="view-bank-playlist" class="view bank-playlist-view hidden" role="region" aria-labelledby="bank-playlist-title">
+    <header class="custom-text-page-bar">
+      <button type="button" class="btn btn-ghost btn-compact" id="btn-bank-playlist-cancel" title="返回练习">返回</button>
+      <h1 id="bank-playlist-title" class="custom-text-page-title">列表播放</h1>
+      <button type="button" class="btn btn-ghost btn-compact" id="btn-bank-playlist-confirm" title="开始列表播放">开始</button>
+    </header>
+    <p class="app-dialog-desc" id="bank-playlist-desc">在当前题型内按列表顺序循环朗读；声音用顶部「音色」设定</p>
+    <div class="bank-playlist-fields">
+      <div class="bank-playlist-range">
+        <label class="app-dialog-field" for="bank-playlist-from">
+          从第几题
+          <input id="bank-playlist-from" type="number" min="1" step="1" inputmode="numeric" autocomplete="off" />
+        </label>
+        <label class="app-dialog-field" for="bank-playlist-to">
+          到第几题
+          <input id="bank-playlist-to" type="number" min="1" step="1" inputmode="numeric" autocomplete="off" />
+        </label>
+      </div>
+      <label class="app-dialog-field" for="bank-playlist-repeats">
+        每题播放次数
+        <input id="bank-playlist-repeats" type="number" min="1" max="20" step="1" inputmode="numeric" autocomplete="off" value="1" />
+      </label>
+    </div>
+  </div>
+
   <div id="practice-jump-dialog" class="app-dialog hidden" role="dialog" aria-modal="true" aria-labelledby="practice-jump-title">
     <div class="app-dialog-card practice-jump-card">
       <h3 id="practice-jump-title">跳转题目</h3>
@@ -673,6 +686,6 @@
   </div>
 
   <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
-  <script type="module" src="./js/app.js?v=20261006audio"></script>
+  <script type="module" src="./js/app.js?v=20261009lib"></script>
 </body>
 </html>

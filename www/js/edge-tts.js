@@ -1,7 +1,7 @@
 /** Edge 联网朗读 + 苹果本机 speechSynthesis。合成结果（联网）写入本机缓存。 */
 
-import { archiveSpeechClip, loadSpeechBlob } from "./tts-cache.js?v=20261003ak";
-import { ensureLockFonts, isLockStressOn, lockFontSpec, renderLockArtwork, splitForLockScreen } from "./lock-screen.js?v=20261004t";
+import { archiveSpeechClip, loadSpeechBlob } from "./tts-cache.js?v=20261009lib";
+import { ensureLockFonts, isLockStressOn, lockFontSpec, renderLockArtwork, splitForLockScreen } from "./lock-screen.js?v=20261009lib";
 
 const TRUSTED_CLIENT_TOKEN = "6A5AA1D4EAFF4E9FB37E23D68491D6F4";
 const GEC_VERSION = "1-143.0.3650.75";
@@ -479,6 +479,16 @@ function stopAppleSpeechNative() {
   return Promise.resolve(plugin.stop()).catch(() => {});
 }
 
+/** 朗读 promise 永不 resolve 是「界面卡死、之后全都没声」的头号来源：一律给超时兜底 */
+function withSpeechTimeout(promise, text, label) {
+  const ms = Math.min(120000, 10000 + String(text || "").length * 250);
+  let timer = null;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label || "speech"}-timeout`)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
 let lastAppleVoiceKey = "";
 
 function announceAppleSystemVoice(info) {
@@ -494,27 +504,35 @@ function announceAppleSystemVoice(info) {
   } catch (_) {}
 }
 
-/** 本机朗读：每次先实时查系统当前英文语音，再用该语音读 */
+/** 本机朗读：每次先实时查系统当前英文语音，再用该语音读；失败/超时自动停掉重试一次，再回退 web */
 async function playLocalAppleSpeech(text, mine, getSession, { rate = 0.92, voiceId = "" } = {}) {
   const spoken = String(text || "").replace(/\s+/g, " ").trim();
   if (!spoken) return;
   if (getSession && getSession() !== mine) return;
   const plugin = appleSpeechPlugin();
   if (plugin?.speak) {
-    try {
-      // 朗读前实时问系统：当前默认英文语音是谁
-      if (typeof plugin.currentVoice === "function") {
-        const live = await plugin.currentVoice();
-        if (getSession && getSession() !== mine) return;
-        announceAppleSystemVoice(live);
-      }
-      const res = await plugin.speak({ text: spoken, rate, voiceId });
+    let lastErr = null;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
       if (getSession && getSession() !== mine) return;
-      announceAppleSystemVoice(res);
-      return;
-    } catch (err) {
-      console.warn("AppleSpeech native failed, fallback web", err);
+      try {
+        if (attempt === 0 && typeof plugin.currentVoice === "function") {
+          // 朗读前实时问系统：当前默认英文语音是谁
+          const live = await plugin.currentVoice();
+          if (getSession && getSession() !== mine) return;
+          announceAppleSystemVoice(live);
+        }
+        const res = await withSpeechTimeout(plugin.speak({ text: spoken, rate, voiceId }), spoken, "apple-speak");
+        if (getSession && getSession() !== mine) return;
+        announceAppleSystemVoice(res);
+        return;
+      } catch (err) {
+        lastErr = err;
+        console.warn(`AppleSpeech native attempt ${attempt + 1} failed`, err);
+        // 停掉卡死的原生任务：原生侧会把旧合成器作废，重试时换新实例开口
+        await stopAppleSpeechNative();
+      }
     }
+    console.warn("AppleSpeech native failed twice, fallback web", lastErr);
   }
   await playSpeechSynthesis(spoken, mine, getSession, { rate, voiceId });
 }
@@ -567,14 +585,21 @@ function playSpeechSynthesis(text, mine, getSession, { rate = 0.92, voiceId = ""
           if (voice.lang) utter.lang = voice.lang;
         }
         let settled = false;
+        let timer = null;
         const done = (ok, err) => {
           if (settled) return;
           settled = true;
+          if (timer) clearTimeout(timer);
           if (ok) resolve();
           else reject(err || new Error("speechSynthesis"));
         };
         utter.onend = () => done(true);
         utter.onerror = () => done(false, new Error("speechSynthesis"));
+        // iOS WKWebView 上 onend/onerror 可能永不触发：超时取消并放行，避免界面卡死
+        timer = setTimeout(() => {
+          try { window.speechSynthesis.cancel(); } catch (_) {}
+          done(false, new Error("speechSynthesis-timeout"));
+        }, Math.min(120000, 8000 + spoken.length * 200));
         if (getSession && getSession() !== mine) {
           done(true);
           return;
@@ -656,13 +681,19 @@ export function createEdgeSpeech() {
         if (voice.lang) utter.lang = voice.lang;
       }
       let settled = false;
+      let timer = null;
       const done = () => {
         if (settled) return;
         settled = true;
+        if (timer) clearTimeout(timer);
         resolve();
       };
       utter.onend = done;
       utter.onerror = done;
+      timer = setTimeout(() => {
+        try { window.speechSynthesis.cancel(); } catch (_) {}
+        done();
+      }, Math.min(60000, 6000 + spoken.length * 200));
       try {
         window.speechSynthesis.speak(utter);
       } catch (_) {
@@ -1124,7 +1155,13 @@ export function createEdgeSpeech() {
       if (engine === "apple") {
         const plugin = appleSpeechPlugin();
         if (plugin?.speakAside) {
-          await plugin.speakAside({ text: spoken, rate: 0.92, voiceId: voice || "" });
+          try {
+            await withSpeechTimeout(plugin.speakAside({ text: spoken, rate: 0.92, voiceId: voice || "" }), spoken, "apple-aside");
+          } catch (err) {
+            console.warn("apple aside failed", err);
+            // 卡死的旁路停掉，原生侧会把旧合成器作废；下次点读用新实例
+            try { await plugin.stopAside?.(); } catch (_) {}
+          }
           return { didPause };
         }
         await playSpeechSynthesisAside(spoken, voice);
@@ -1554,22 +1591,54 @@ export function createEdgeSpeech() {
     if (!plugin?.speakQueue) return null;
 
     session += 1;
+    const mine = session;
     haltAudio();
     keepScreenOn(true);
     const off = Math.max(0, Number(opts.offset) || 0);
     const grand = Number(opts.grandTotal) || list.length + off;
     const handles = [];
     try {
+      await ensureLockFonts();
+      // 本机排队朗读时，锁屏封面也画英中双语（与联网 speakLinesOnline 一致）
+      const artCache = new Map();
+      const pushAppleLock = (lineNo) => {
+        if (mine !== session || !plugin?.updateNowPlaying) return;
+        const idx = Math.max(0, (Number(lineNo) || 1) - 1);
+        const text = list[idx] || "";
+        if (!text) return;
+        const label = `${opts.title || "全文朗读"} · ${idx + 1 + off}/${grand}`;
+        const zh = (Array.isArray(opts.subs) ? opts.subs[idx] : "") || "";
+        const rich = isLockStressOn() && Array.isArray(opts.rich) ? opts.rich[idx] : null;
+        const stress = isLockStressOn() ? 1 : 0;
+        const key = `${idx}:${stress}`;
+        let art = artCache.get(key);
+        if (art == null) {
+          art = renderLockArtwork(text, label, zh, rich) || "";
+          artCache.set(key, art);
+        }
+        const { title, artist } = splitForLockScreen(text);
+        plugin.updateNowPlaying({
+          title: title || opts.title || "全文朗读",
+          artist: artist || label,
+          album: label,
+          artwork: art,
+        }).catch(() => {});
+      };
       if (typeof plugin.addListener === "function") {
         handles.push(
           await plugin.addListener("queueProgress", (d) => {
             const i = Number(d?.index) || 0;
             opts.onLine?.(i + off, grand);
+            pushAppleLock(i);
           })
         );
       }
       if (typeof opts.onStopped === "function" && typeof plugin.addListener === "function") {
         handles.push(await plugin.addListener("queueStopped", () => opts.onStopped()));
+      }
+      if (typeof opts.onLooped === "function" && typeof plugin.addListener === "function") {
+        // 原生单篇循环：每重排一轮通知一次，界面把进度重置回第一句
+        handles.push(await plugin.addListener("queueLooped", () => opts.onLooped()));
       }
       if (typeof plugin.addListener === "function") {
         // 锁屏界面 / 耳机暂停、继续：同步网页里的状态
@@ -1585,6 +1654,10 @@ export function createEdgeSpeech() {
         );
       }
       nativeQueue = true;
+      // 先刷第一句封面，再开口，锁屏不会空白一截
+      pushAppleLock(1);
+      // loop=true 时原生在最后一句读完自行重排下一轮（promise 直到停止才 resolve，
+      // 避免每轮 stop→重排队的抖动截断下一轮第一句）；否则一轮读完即 resolve
       return await plugin.speakQueue({
         lines: list,
         pauseMs: opts.pauseMs ?? 420,
@@ -1594,6 +1667,7 @@ export function createEdgeSpeech() {
         grandTotal: grand,
         voiceId: opts.voice || "",
         voiceIds: Array.isArray(opts.voiceIds) ? opts.voiceIds : [],
+        loop: opts.loop === true,
       });
     } finally {
       keepScreenOn(false);

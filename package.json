@@ -6,6 +6,8 @@
     "web": "bash scripts/web-dev.sh",
     "build": "npm --prefix desktop run build:dir",
     "models:fetch": "bash scripts/fetch-translate-models.sh",
-    "models:fetch:cn": "HF_ENDPOINT=https://hf-mirror.com bash scripts/fetch-translate-models.sh"
+    "models:fetch:cn": "HF_ENDPOINT=https://hf-mirror.com bash scripts/fetch-translate-models.sh",
+    "test": "node --test tests/*.test.mjs",
+    "bump-version": "node scripts/bump-version.mjs"
   }
 }

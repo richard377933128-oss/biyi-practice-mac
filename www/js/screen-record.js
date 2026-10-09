@@ -3,22 +3,41 @@
 const PREFS_KEY = "pte_screen_record_prefs";
 
 const RES_PRESETS = {
-  "720p": { label: "720p", width: 1280, height: 720, videoBits: 2_000_000 },
-  "1080p": { label: "1080p", width: 1920, height: 1080, videoBits: 4_000_000 },
-  "1080x1920": { label: "竖屏1080", width: 1080, height: 1920, videoBits: 4_000_000 },
-  "1440p": { label: "1440p", width: 2560, height: 1440, videoBits: 6_500_000 },
+  "720p": { label: "1280×720", width: 1280, height: 720, videoBits: 2_000_000 },
+  "1080p": { label: "1920×1080", width: 1920, height: 1080, videoBits: 4_000_000 },
+  "1080x1920": { label: "1080×1920", width: 1080, height: 1920, videoBits: 4_000_000 },
+  "1440p": { label: "2560×1440", width: 2560, height: 1440, videoBits: 6_500_000 },
 };
 
 const FPS_PRESETS = [15, 24, 30, 60];
 
-/** 分辨率 + 帧率合成一档画质；内部仍拆成 res / fps 交给录制 */
-const QUALITY_PRESETS = {
-  "720p30": { label: "1280×720 · 30", res: "720p", fps: 30 },
-  "1080p30": { label: "1920×1080 · 30", res: "1080p", fps: 30 },
-  "1080p60": { label: "1920×1080 · 60", res: "1080p", fps: 60 },
-  portrait30: { label: "1080×1920 · 30", res: "1080x1920", fps: 30 },
-  "1440p30": { label: "2560×1440 · 30", res: "1440p", fps: 30 },
+/** 旧版「画质」选项 → 分辨率（兼容本地已存 prefs） */
+const LEGACY_QUALITY_TO_RES = {
+  "720p30": "720p",
+  "1080p30": "1080p",
+  "1080p60": "1080p",
+  portrait30: "1080x1920",
+  "1440p30": "1440p",
 };
+
+/**
+ * 按设备内存/核心数自适应帧率（与录像一致，用户不再手选）。
+ * navigator.deviceMemory 单位 GiB；iOS 常拿不到，再看核心数，再兜底 30。
+ */
+function pickAdaptiveFps(resKey = "1080p") {
+  const mem = Number(navigator.deviceMemory) || 0;
+  const cores = Number(navigator.hardwareConcurrency) || 0;
+  const heavy = resKey === "1080p" || resKey === "1080x1920" || resKey === "1440p";
+  let fps = 30;
+  if (mem >= 8 || cores >= 8) fps = 60;
+  else if (mem >= 4 || cores >= 6) fps = 30;
+  else if (mem >= 2 || cores >= 4) fps = 24;
+  else if (mem > 0 || cores > 0) fps = 15;
+  if (heavy && fps >= 60) fps = 30;
+  else if (heavy && fps === 30 && mem > 0 && mem < 4) fps = 24;
+  if (resKey === "1440p" && fps > 30) fps = 30;
+  return FPS_PRESETS.includes(fps) ? fps : 30;
+}
 
 const EN_FONT_PRESETS = {
   mono: {
@@ -78,16 +97,10 @@ const EN_FONT_PRESETS = {
   },
 };
 
-function findQualityKey(res, fps) {
-  const exact = Object.entries(QUALITY_PRESETS).find(([, p]) => p.res === res && p.fps === Number(fps));
-  if (exact) return exact[0];
-  const byRes = Object.entries(QUALITY_PRESETS).find(([, p]) => p.res === res);
-  return byRes ? byRes[0] : "1080p30";
-}
-
 function qualityLabel(res, fps) {
-  const key = findQualityKey(res, fps);
-  return QUALITY_PRESETS[key]?.label || "1920×1080 · 30";
+  const dim = RES_PRESETS[res]?.label || "1920×1080";
+  const f = Number(fps) || pickAdaptiveFps(res);
+  return `${dim} · ${f}`;
 }
 
 const LEAD_FONT_PRESETS = {
@@ -160,7 +173,7 @@ function loadPrefs() {
     if (!raw || typeof raw !== "object") {
       return {
         res: "1080p",
-        fps: 30,
+        fps: pickAdaptiveFps("1080p"),
         wordsBadge: true,
         leadFont: "fzxingkai",
         leadSize: DEFAULT_LEAD_SIZE_KEY,
@@ -170,7 +183,8 @@ function loadPrefs() {
       };
     }
     const res = RES_PRESETS[raw.res] ? raw.res : "1080p";
-    const fps = FPS_PRESETS.includes(Number(raw.fps)) ? Number(raw.fps) : 30;
+    // 帧率始终按设备自适应，不再沿用旧 prefs 里的手选值
+    const fps = pickAdaptiveFps(res);
     const wordsBadge = raw.wordsBadge !== false;
     const leadFont = LEAD_FONT_PRESETS[raw.leadFont] ? raw.leadFont : "fzxingkai";
     const leadSize = normalizeLeadSizeKey(raw.leadSize);
@@ -181,7 +195,7 @@ function loadPrefs() {
   } catch (_) {
     return {
       res: "1080p",
-      fps: 30,
+      fps: pickAdaptiveFps("1080p"),
       wordsBadge: true,
       leadFont: "fzxingkai",
       leadSize: DEFAULT_LEAD_SIZE_KEY,
@@ -834,6 +848,9 @@ export function createScreenRecord({ $ = (sel) => document.querySelector(sel), t
     enFontEl: $("[data-screen-en-font]"),
     enWrapEl: $("[data-screen-en-wrap]"),
     idleSkipEl: $("[data-screen-idle-skip]"),
+    setupDialog: $("#screen-setup-dialog"),
+    setupCancel: $("#btn-screen-setup-cancel"),
+    setupConfirm: $("#btn-screen-setup-confirm"),
   };
 
   function setTip(msg) {
@@ -841,7 +858,12 @@ export function createScreenRecord({ $ = (sel) => document.querySelector(sel), t
   }
 
   function syncOpts() {
-    if (ui.qualityEl) ui.qualityEl.value = findQualityKey(state.res, state.fps);
+    if (ui.qualityEl) {
+      const key = RES_PRESETS[state.res]
+        ? state.res
+        : LEGACY_QUALITY_TO_RES[ui.qualityEl.value] || "1080p";
+      ui.qualityEl.value = RES_PRESETS[key] ? key : "1080p";
+    }
     if (ui.wordsBadgeEl) ui.wordsBadgeEl.value = state.wordsBadge ? "1" : "0";
     if (ui.leadFontEl) {
       ui.leadFontEl.value = state.leadFont;
@@ -884,10 +906,13 @@ export function createScreenRecord({ $ = (sel) => document.querySelector(sel), t
   }
 
   function readOpts() {
-    if (ui.qualityEl && QUALITY_PRESETS[ui.qualityEl.value]) {
-      const q = QUALITY_PRESETS[ui.qualityEl.value];
-      state.res = q.res;
-      state.fps = q.fps;
+    if (ui.qualityEl) {
+      const raw = ui.qualityEl.value;
+      const res = RES_PRESETS[raw]
+        ? raw
+        : LEGACY_QUALITY_TO_RES[raw] || state.res || "1080p";
+      state.res = RES_PRESETS[res] ? res : "1080p";
+      state.fps = pickAdaptiveFps(state.res);
     }
     if (ui.wordsBadgeEl) state.wordsBadge = ui.wordsBadgeEl.value !== "0";
     if (ui.leadFontEl && LEAD_FONT_PRESETS[ui.leadFontEl.value]) state.leadFont = ui.leadFontEl.value;
@@ -919,16 +944,21 @@ export function createScreenRecord({ $ = (sel) => document.querySelector(sel), t
       ui.toggle.classList.toggle("is-recording", on && !state.idlePaused);
       ui.toggle.classList.toggle("is-paused", (paused && !on) || state.idlePaused);
       ui.toggle.setAttribute("aria-pressed", on || paused ? "true" : "false");
+      const label = ui.toggle.querySelector("[data-screen-record-label]");
       if (on && state.idlePaused) {
+        if (label) label.textContent = "暂停";
         ui.toggle.setAttribute("aria-label", "自动暂停中");
         ui.toggle.title = "自动暂停中（计时已停）；再输入会继续";
       } else if (on) {
+        if (label) label.textContent = "暂停";
         ui.toggle.setAttribute("aria-label", "暂停录屏");
         ui.toggle.title = "暂停录屏（会悬浮保留）";
       } else if (paused) {
+        if (label) label.textContent = "继续";
         ui.toggle.setAttribute("aria-label", "继续录屏");
         ui.toggle.title = "继续录屏";
       } else {
+        if (label) label.textContent = "录屏";
         ui.toggle.setAttribute("aria-label", "开始录屏");
         ui.toggle.title = "开始录屏";
       }
@@ -1546,6 +1576,7 @@ export function createScreenRecord({ $ = (sel) => document.querySelector(sel), t
     }
 
     readOpts();
+    state.fps = pickAdaptiveFps(state.res);
     const preset = RES_PRESETS[state.res] || RES_PRESETS["1080p"];
     const fps = state.fps;
 
@@ -1945,13 +1976,35 @@ export function createScreenRecord({ $ = (sel) => document.querySelector(sel), t
     syncFloat();
     resetFloatPos();
     await clearPersistedDraft();
-    setTip("点「录屏」开始；再点暂停 → 悬浮条「保存」到本地");
+    setTip("点「录屏」先选选项再开始；再点暂停 → 悬浮条「保存」到本地");
     toast("已删除半成品");
   }
 
   /** @deprecated 兼容旧调用：改为暂停保留半成品 */
   function stopRecord() {
     return pauseRecord();
+  }
+
+  function openSetupDialog() {
+    syncOpts();
+    if (!ui.setupDialog) {
+      startRecord().catch((err) => console.warn(err));
+      return;
+    }
+    ui.setupDialog.classList.remove("hidden");
+  }
+
+  function closeSetupDialog() {
+    ui.setupDialog?.classList.add("hidden");
+  }
+
+  function confirmSetup() {
+    readOpts();
+    closeSetupDialog();
+    startRecord().catch((err) => {
+      console.warn(err);
+      toast(err?.message || "无法开始录屏");
+    });
   }
 
   async function toggle() {
@@ -1974,7 +2027,7 @@ export function createScreenRecord({ $ = (sel) => document.querySelector(sel), t
     if (state.composed) {
       toast("请先保存或删除当前成品");
       syncFloat();
-    } else await startRecord();
+    } else openSetupDialog();
   }
 
   function fileName() {
@@ -2311,7 +2364,7 @@ export function createScreenRecord({ $ = (sel) => document.querySelector(sel), t
     setOptsDisabled(false);
     syncToggle();
     await clearPersistedDraft();
-    setTip("点「录屏」开始；再点暂停 → 悬浮条「保存」到本地");
+    setTip("点「录屏」先选选项再开始；再点暂停 → 悬浮条「保存」到本地");
   }
 
   function clampFloatPos(left, top, width, height) {
@@ -2400,16 +2453,17 @@ export function createScreenRecord({ $ = (sel) => document.querySelector(sel), t
     el.addEventListener("pointercancel", endDrag);
   }
 
-  function mountFontPreview(select, presets, ariaLabel) {
+  function mountFontPreview(select, presets, ariaLabel, { prefix = "" } = {}) {
     if (!select || select._syncFontPick) return;
     const fallback = presets[select.value] || Object.values(presets)[0];
     const pick = document.createElement("div");
     pick.className = "font-pick";
     const btn = document.createElement("button");
     btn.type = "button";
-    btn.className = "font-pick-btn";
+    btn.className = "btn btn-ghost btn-compact font-pick-btn";
     btn.setAttribute("aria-haspopup", "listbox");
     btn.setAttribute("aria-label", ariaLabel);
+    btn.title = ariaLabel;
     const menu = document.createElement("div");
     menu.className = "font-pick-menu";
     menu.hidden = true;
@@ -2438,7 +2492,8 @@ export function createScreenRecord({ $ = (sel) => document.querySelector(sel), t
     }
     function syncBtn() {
       const preset = presets[select.value] || fallback;
-      btn.textContent = select.selectedOptions[0]?.textContent || preset?.label || "";
+      const name = select.selectedOptions[0]?.textContent || preset?.label || "";
+      btn.textContent = prefix ? `${prefix}·${name}` : name;
       if (preset?.stack) btn.style.setProperty("--pick-font", preset.stack);
       if (preset?.style === "italic") btn.style.setProperty("--pick-style", "italic");
       else btn.style.removeProperty("--pick-style");
@@ -2520,11 +2575,22 @@ export function createScreenRecord({ $ = (sel) => document.querySelector(sel), t
     syncOpts();
     mountFloatOnBody();
     bindFloatDrag();
-    setTip("点「录屏」开始；再点暂停 → 悬浮条「保存」到本地");
+    setTip("点「录屏」先选选项再开始；再点暂停 → 悬浮条「保存」到本地");
     ensureLeadFontLoaded();
     ensureEnFontLoaded();
     applyPracticeFonts();
     ui.toggle?.addEventListener("click", () => toggle());
+    ui.setupCancel?.addEventListener("click", () => closeSetupDialog());
+    ui.setupConfirm?.addEventListener("click", () => confirmSetup());
+    ui.setupDialog?.addEventListener("click", (e) => {
+      if (e.target === e.currentTarget) closeSetupDialog();
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key !== "Escape") return;
+      if (!ui.setupDialog || ui.setupDialog.classList.contains("hidden")) return;
+      e.preventDefault();
+      closeSetupDialog();
+    });
     ui.btnResume?.addEventListener("click", () => resumeRecord());
     ui.btnSave?.addEventListener("click", () => saveLocal());
     ui.btnDiscard?.addEventListener("click", () => discardDraft());
@@ -2596,6 +2662,9 @@ export function createScreenRecord({ $ = (sel) => document.querySelector(sel), t
     window.addEventListener("pagehide", () => {
       checkpointOnLeave();
     });
+
+    mountFontPreview(ui.leadFontEl, LEAD_FONT_PRESETS, "中文字体");
+    mountFontPreview(ui.enFontEl, EN_FONT_PRESETS, "英文字体");
 
     restorePersistedDraft().catch((err) => console.warn("restore screen draft", err));
   }

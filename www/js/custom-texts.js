@@ -1,5 +1,5 @@
-import { translateEnLinesToZh, translateZhLinesToEn } from "./en-zh.js?v=20260930bj";
-import { deleteSpeechClips, speechCacheKey } from "./tts-cache.js?v=20260928m";
+import { translateEnLinesToZh, translateZhLinesToEn } from "./en-zh.js?v=20261009lib";
+import { deleteSpeechClips, speechCacheKey } from "./tts-cache.js?v=20261009lib";
 
 const STORAGE_KEY = "pte_custom_texts";
 export const CUSTOM_BANK_CODE = "CUSTOM";
@@ -505,7 +505,7 @@ function saveRawList(list) {
   } catch (_) {}
 }
 
-/** 把安装包里的自定义文章 seed 合并进 localStorage（按 id，不覆盖用户已有） */
+/** 把安装包里的自定义文章 seed 合并进 localStorage（按 id；同名旧稿若缺首句英文也会修好） */
 let seedMergePromise = null;
 export async function ensureCustomTextsSeedMerged() {
   if (seedMergePromise) return seedMergePromise;
@@ -519,26 +519,45 @@ export async function ensureCustomTextsSeedMerged() {
       const byId = new Map(cur.map((x) => [x.id, x]));
       let changed = false;
       let nextNum = cur.reduce((m, x) => Math.max(m, Number(x.num) || 0), 0);
+
+      const firstEn = (item) =>
+        String((Array.isArray(item?.sense_groups) && item.sense_groups[0]?.english) || "")
+          .trim();
+
       for (const item of seeded) {
         const en = normalizeEn(item?.en || item?.text || "");
         if (!en) continue;
         const id = String(item?.id || "").trim();
         const name = String(item?.name || "").trim() || `自定义 #${nextNum + 1}`;
         const sense_groups = normalizeSenseGroups(item?.sense_groups);
-        if (id && byId.has(id)) {
-          const prev = byId.get(id);
-          // 同 id：seed 内容变了则覆盖（修导入、换译本）
-          if (normalizeEn(prev.en) === en) continue;
+        const seedFirst = firstEn({ sense_groups });
+
+        const applySeed = (prev) => {
           prev.name = name || prev.name;
           prev.en = en;
           prev.sense_groups = sense_groups;
           prev.at = Number(item?.at) || Date.now();
           changed = true;
+        };
+
+        if (id && byId.has(id)) {
+          const prev = byId.get(id);
+          // 同 id：英文全文或首句意群对不上则覆盖（修「漏第一行英文」旧稿）
+          if (normalizeEn(prev.en) === en && firstEn(prev) === seedFirst) continue;
+          applySeed(prev);
           continue;
         }
-        // 同名且英文相同也跳过，避免重复
-        const dup = cur.find((x) => x.name === name && x.en === en);
-        if (dup) continue;
+
+        // 同名旧导入（不同 id）也一并修好，避免自由练习里残留错位副本
+        const sameName = cur.filter((x) => x.name === name);
+        let repairedDup = false;
+        for (const prev of sameName) {
+          if (normalizeEn(prev.en) === en && firstEn(prev) === seedFirst) continue;
+          applySeed(prev);
+          repairedDup = true;
+        }
+        if (repairedDup || sameName.some((x) => normalizeEn(x.en) === en)) continue;
+
         nextNum += 1;
         const row = {
           id: id || `${CUSTOM_BANK_CODE}-${nextNum}`,
@@ -548,7 +567,6 @@ export async function ensureCustomTextsSeedMerged() {
           sense_groups,
           at: Number(item?.at) || Date.now(),
         };
-        // 若 num 冲突，顺延
         while (cur.some((x) => x.num === row.num) || byId.has(row.id)) {
           nextNum += 1;
           row.num = nextNum;

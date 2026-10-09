@@ -1,20 +1,32 @@
-/** 悬浮窗摄像头录像。点「录像」先选分辨率/帧率；保存为 MP4。不改动录屏。 */
+/**
+ * 悬浮窗摄像头录像。
+ * 录像核心复用 PTE voice-recite：清晰度档 + 摄像头真实宽高合成（横竖自适应）+ iOS 音轨保活。
+ */
 
 const PREFS = {
   pos: "biyi_camera_float_pos",
   size: "biyi_camera_float_size",
   facing: "biyi_camera_facing",
-  res: "biyi_camera_res",
-  fps: "biyi_camera_fps",
+  res: "biyi_camera_res_v4",
 };
 
-const RES_PRESETS = {
-  "480p": { label: "640×480", w: 640, h: 480, bits: 900_000 },
-  "720p": { label: "1280×720", w: 1280, h: 720, bits: 2_500_000 },
-  "1080p": { label: "1920×1080", w: 1920, h: 1080, bits: 5_000_000 },
+/** 默认按本机最高清晰度要画面（ideal 1080p）；系统会落到设备实际支持的最高档 */
+const QUALITY_BEST = {
+  label: "1080p",
+  width: 1920,
+  height: 1080,
+  maxW: 1920,
+  maxH: 1080,
+  fps: 30,
+  videoBits: 2500000,
 };
 
-const FPS_PRESETS = [15, 24, 30];
+function isAppleWebKit() {
+  const ua = String(navigator.userAgent || "");
+  if (/iPhone|iPad|iPod/i.test(ua)) return true;
+  if (/AppleWebKit/i.test(ua) && !/Chrome|Chromium|Edg|Electron/i.test(ua)) return true;
+  return false;
+}
 
 function fmt(sec) {
   const s = Math.max(0, Math.floor(Number(sec) || 0));
@@ -37,41 +49,74 @@ function writePref(key, value) {
   } catch (_) {}
 }
 
-function pickMp4Mime() {
+/** 与 PTE pickVideoMime 一致 */
+function pickVideoMime() {
   if (typeof MediaRecorder === "undefined" || !MediaRecorder.isTypeSupported) return "";
-  const list = [
-    "video/mp4;codecs=avc1.42001E,mp4a.40.2",
-    "video/mp4;codecs=avc1.42E01E,mp4a.40.2",
-    "video/mp4;codecs=avc1.4D401F,mp4a.40.2",
-    "video/mp4;codecs=avc1,mp4a.40.2",
-    "video/mp4;codecs=h264,aac",
-    "video/mp4",
-  ];
+  const apple = isAppleWebKit();
+  const list = apple
+    ? [
+        "video/mp4;codecs=avc1.42001E,mp4a.40.2",
+        "video/mp4;codecs=avc1.42E01E,mp4a.40.2",
+        "video/mp4;codecs=avc1,mp4a.40.2",
+        "video/mp4",
+      ]
+    : [
+        "video/webm;codecs=vp9,opus",
+        "video/webm;codecs=vp8,opus",
+        "video/webm",
+        "video/mp4",
+      ];
   return list.find((t) => MediaRecorder.isTypeSupported(t)) || "";
 }
 
+function pickMp4Mime() {
+  return pickVideoMime();
+}
+
 function pickAnyMime() {
+  return pickVideoMime();
+}
+
+/** 练习页当前题名，形如「#1 Lincoln」 */
+function readQuestionTitle() {
+  const root = document.querySelector("#q-name");
+  if (!root) return "";
+  const num = root.querySelector(".practice-num-jump")?.textContent?.replace(/\s+/g, " ").trim() || "";
+  const title = root.querySelector(".q-title-text")?.textContent?.replace(/\s+/g, " ").trim() || "";
+  if (num && title) return `${num} ${title}`;
+  if (num) return num;
+  if (title) return title;
+  return root.textContent?.replace(/\s+/g, " ").trim() || "";
+}
+
+function sanitizeFileName(s) {
   return (
-    pickMp4Mime() ||
-    (typeof MediaRecorder !== "undefined" &&
-      MediaRecorder.isTypeSupported &&
-      (["video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"].find((t) =>
-        MediaRecorder.isTypeSupported(t)
-      ) ||
-        "")) ||
-    ""
+    String(s || "")
+      .replace(/[\/\\:*?"<>|\n\r\t]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 80) || "笔译录像"
   );
 }
 
-/** 把非 MP4 片段用 canvas 重编码成 MP4（并带上音轨若可） */
-async function remuxToMp4(srcBlob, { width, height, fps, videoBits } = {}) {
-  const mp4Mime = pickMp4Mime() || "video/mp4";
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.max(16, width || 1280);
-  canvas.height = Math.max(16, height || 720);
-  const ctx = canvas.getContext("2d", { alpha: false });
-  if (!ctx) throw new Error("canvas unavailable");
+/** 左上角烧录题名（与 PTE 一致：轻字重纯文字，录制时实时画上） */
+function drawTitleBurn(ctx, text, canvasW, canvasH) {
+  const label = String(text || "").trim();
+  if (!label || !ctx) return;
+  const pad = Math.max(8, Math.round(Math.min(canvasW, canvasH) * 0.03));
+  const fontSize = Math.max(14, Math.round(Math.min(canvasW, canvasH) * 0.055));
+  ctx.save();
+  ctx.font = `300 ${fontSize}px -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif`;
+  ctx.textBaseline = "top";
+  ctx.textAlign = "left";
+  ctx.fillStyle = "#ffffff";
+  ctx.fillText(label, pad, pad, canvasW - pad * 2);
+  ctx.restore();
+}
 
+/** 把片段用 canvas 重编码成 MP4（可带音轨；可选左上角烧录题名） */
+async function remuxToMp4(srcBlob, { width, height, fps, videoBits, burnTitle = "" } = {}) {
+  const mp4Mime = pickMp4Mime() || "video/mp4";
   const video = document.createElement("video");
   video.playsInline = true;
   video.muted = true;
@@ -92,8 +137,15 @@ async function remuxToMp4(srcBlob, { width, height, fps, videoBits } = {}) {
     video.load();
   });
 
-  const canvasStream = canvas.captureStream(Math.max(1, Number(fps) || 30));
-  // 尽量附带原音轨
+  const canvas = document.createElement("canvas");
+  // 跟 PTE 一样：优先用片源真实尺寸，不硬套横/竖
+  canvas.width = Math.max(16, video.videoWidth || width || 1280);
+  canvas.height = Math.max(16, video.videoHeight || height || 720);
+  const ctx = canvas.getContext("2d", { alpha: false });
+  if (!ctx) throw new Error("canvas unavailable");
+  const title = String(burnTitle || "").trim();
+
+  const canvasStream = canvas.captureStream(Math.max(1, Number(fps) || 24));
   try {
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     const src = audioCtx.createMediaElementSource(video);
@@ -102,7 +154,7 @@ async function remuxToMp4(srcBlob, { width, height, fps, videoBits } = {}) {
     dest.stream.getAudioTracks().forEach((t) => canvasStream.addTrack(t));
   } catch (_) {}
 
-  const opts = { videoBitsPerSecond: videoBits || 2_500_000, mimeType: mp4Mime };
+  const opts = { videoBitsPerSecond: videoBits || 1_500_000, mimeType: mp4Mime };
   let recorder;
   try {
     recorder = new MediaRecorder(canvasStream, opts);
@@ -110,11 +162,7 @@ async function remuxToMp4(srcBlob, { width, height, fps, videoBits } = {}) {
     try {
       recorder = new MediaRecorder(canvasStream, { videoBitsPerSecond: opts.videoBitsPerSecond, mimeType: "video/mp4" });
     } catch (err2) {
-      try {
-        recorder = new MediaRecorder(canvasStream, { videoBitsPerSecond: opts.videoBitsPerSecond });
-      } catch (err3) {
-        throw err3;
-      }
+      recorder = new MediaRecorder(canvasStream, { videoBitsPerSecond: opts.videoBitsPerSecond });
     }
   }
 
@@ -145,6 +193,7 @@ async function remuxToMp4(srcBlob, { width, height, fps, videoBits } = {}) {
       }
       try {
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        if (title) drawTitleBurn(ctx, title, canvas.width, canvas.height);
       } catch (_) {}
       raf = requestAnimationFrame(tick);
     };
@@ -207,21 +256,66 @@ export function createSystemCamera({ $, toast }) {
   const rerecordBtn = $("[data-camera-rerecord]");
   const tipEl = $("[data-camera-tip]");
   const resizeHandle = $("[data-camera-resize]");
-  const setupDialog = $("#camera-setup-dialog");
-  const setupRes = $("#camera-setup-res");
-  const setupFps = $("#camera-setup-fps");
-  const setupCancel = $("#btn-camera-setup-cancel");
-  const setupStart = $("#btn-camera-setup-confirm");
-
   if (!btn || !floatEl || !liveEl) {
     return { open: () => {}, stop: () => {} };
   }
   if (floatEl.parentElement !== document.body) document.body.appendChild(floatEl);
 
   let facing = readPref(PREFS.facing, "user") === "environment" ? "environment" : "user";
-  let resKey = RES_PRESETS[readPref(PREFS.res, "720p")] ? readPref(PREFS.res, "720p") : "720p";
-  let fps = Number(readPref(PREFS.fps, "30"));
-  if (!FPS_PRESETS.includes(fps)) fps = 30;
+  /** @type {{ w: number, h: number } | null} */
+  let lastComposeSize = null;
+  let audioCtx = null;
+  let audioKeepalive = null;
+
+  function getQuality() {
+    return QUALITY_BEST;
+  }
+
+  function beginRecord() {
+    startRecord().catch((err) => {
+      console.warn(err);
+      const msg = String(err?.message || err || "");
+      if (/NotAllowed|Permission|denied/i.test(msg)) toast("请允许使用摄像头和麦克风");
+      else if (/NotFound|DevicesNotFound/i.test(msg)) toast("没有找到摄像头");
+      else toast(msg || "无法开始录像");
+    });
+  }
+
+  function teardownAudioKeepalive() {
+    try {
+      audioKeepalive?.disconnect?.();
+    } catch (_) {}
+    audioKeepalive = null;
+    const ctx = audioCtx;
+    audioCtx = null;
+    if (ctx) {
+      try {
+        ctx.close();
+      } catch (_) {}
+    }
+  }
+
+  /** iOS 长录时音轨易空转：与 PTE 一样用静音 AudioContext 拉住麦克风链 */
+  function setupAudioKeepalive(mediaStream) {
+    teardownAudioKeepalive();
+    if (!mediaStream) return;
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    try {
+      const ctx = new AC();
+      const src = ctx.createMediaStreamSource(mediaStream);
+      const gain = ctx.createGain();
+      gain.gain.value = 0;
+      src.connect(gain);
+      if (ctx.state === "suspended") {
+        const resume = () => ctx.resume().catch(() => {});
+        resume();
+        document.addEventListener("touchend", resume, { once: true });
+      }
+      audioCtx = ctx;
+      audioKeepalive = gain;
+    } catch (_) {}
+  }
 
   let stream = null;
   let recorder = null;
@@ -235,16 +329,29 @@ export function createSystemCamera({ $, toast }) {
   let drag = null;
   let resize = null;
   let remuxing = false;
+  /** 本段录像对应的题名（烧录 + 文件名） */
+  let sessionTitle = "";
+  /** 录制时是否已实时烧录（结束不必再整片重编码） */
+  let titleBurned = false;
+  let composeStream = null;
+  let composeRaf = 0;
+  let composeTimer = 0;
+  /** 录像中双击屏幕结束：上一击时间与位置 */
+  let lastTapAt = 0;
+  let lastTapX = 0;
+  let lastTapY = 0;
+  let tapDownX = 0;
+  let tapDownY = 0;
+  let tapDownAt = 0;
+  const badgeEl = floatEl.querySelector(".camera-float-badge");
 
-  const MIN_FLOAT_W = 160;
-  function maxFloatW() {
-    return Math.min(560, Math.max(MIN_FLOAT_W, window.innerWidth - 24));
-  }
+  /** 固定小窗宽度（与当前满意尺寸一致），不允许拖角缩放 */
+  const FIXED_FLOAT_W = 366;
 
-  function applyFloatWidth(width, { persist = true, keepPlace = true } = {}) {
-    const w = Math.min(maxFloatW(), Math.max(MIN_FLOAT_W, Math.round(Number(width) || 240)));
+  function applyFloatWidth(_width, { keepPlace = true } = {}) {
+    const maxW = Math.max(120, window.innerWidth - 24);
+    const w = Math.min(FIXED_FLOAT_W, maxW);
     floatEl.style.width = `${w}px`;
-    if (persist) writePref(PREFS.size, String(w));
     if (keepPlace && floatEl.classList.contains("is-placed") && !floatEl.hidden) {
       placeFloat(parseFloat(floatEl.style.left) || 0, parseFloat(floatEl.style.top) || 0);
     }
@@ -252,8 +359,7 @@ export function createSystemCamera({ $, toast }) {
   }
 
   function restoreFloatWidth() {
-    const raw = Number(readPref(PREFS.size, ""));
-    if (Number.isFinite(raw) && raw >= MIN_FLOAT_W) applyFloatWidth(raw, { persist: false, keepPlace: false });
+    applyFloatWidth(FIXED_FLOAT_W, { keepPlace: false });
   }
 
   function setTip(msg) {
@@ -262,9 +368,9 @@ export function createSystemCamera({ $, toast }) {
 
   function syncBtn() {
     btn.classList.toggle("is-recording", recording);
-    btn.setAttribute("aria-pressed", recording ? "true" : "false");
-    btn.setAttribute("aria-label", recording ? "结束录像" : "开始悬浮录像");
     btn.title = recording ? "结束录像" : "开始悬浮录像";
+    const label = btn.querySelector("[data-camera-btn-label]");
+    if (label) label.textContent = "录像";
     if (btnTimerEl) {
       btnTimerEl.hidden = !recording;
       if (!recording) btnTimerEl.textContent = "0:00";
@@ -297,7 +403,49 @@ export function createSystemCamera({ $, toast }) {
     objectUrl = null;
   }
 
+  function setLiveBadge(text) {
+    if (!badgeEl) return;
+    const t = String(text || "").trim();
+    badgeEl.textContent = t || "录像中";
+  }
+
+  function teardownComposer() {
+    if (composeRaf) {
+      try {
+        cancelAnimationFrame(composeRaf);
+      } catch (_) {}
+      composeRaf = 0;
+    }
+    if (composeTimer) {
+      clearInterval(composeTimer);
+      composeTimer = 0;
+    }
+    const composed = composeStream;
+    composeStream = null;
+    if (composed) {
+      try {
+        composed.getTracks().forEach((t) => t.stop());
+      } catch (_) {}
+    }
+  }
+
+  function setPreviewWarming(on) {
+    previewEl?.classList.toggle("is-warming", !!on);
+  }
+
+  /** 比例由 CSS 固定 9:16；这里只清掉可能残留的旧 inline */
+  function syncLiveAspect() {
+    if (liveEl) liveEl.style.aspectRatio = "";
+    if (playbackEl) playbackEl.style.aspectRatio = "";
+  }
+
+  function clearLiveAspect() {
+    syncLiveAspect();
+  }
+
   function stopTracks() {
+    teardownComposer();
+    teardownAudioKeepalive();
     stream?.getTracks?.().forEach((t) => {
       try {
         t.stop();
@@ -305,6 +453,100 @@ export function createSystemCamera({ $, toast }) {
     });
     stream = null;
     liveEl.srcObject = null;
+    setPreviewWarming(false);
+    clearLiveAspect();
+    setLiveBadge("录像中");
+  }
+
+  /** 等摄像头真实宽高稳定，避免开录瞬间黑边 / 比例乱跳 */
+  async function waitLiveVideoReady({ minStableMs = 240, timeoutMs = 4500 } = {}) {
+    const start = Date.now();
+    let lastW = 0;
+    let lastH = 0;
+    let stableSince = 0;
+    while (Date.now() - start < timeoutMs) {
+      const w = liveEl.videoWidth || 0;
+      const h = liveEl.videoHeight || 0;
+      if (w > 16 && h > 16) {
+        if (w === lastW && h === lastH) {
+          if (!stableSince) stableSince = Date.now();
+          if (Date.now() - stableSince >= minStableMs) return { w, h };
+        } else {
+          lastW = w;
+          lastH = h;
+          stableSince = Date.now();
+          syncLiveAspect();
+        }
+      }
+      await new Promise((r) => setTimeout(r, 40));
+    }
+    const w = liveEl.videoWidth || 0;
+    const h = liveEl.videoHeight || 0;
+    if (w > 16 && h > 16) {
+      syncLiveAspect();
+      return { w, h };
+    }
+    return null;
+  }
+
+  /**
+   * 与 PTE _setupComposer 一致：画布用摄像头真实 videoWidth/Height，横竖随设备自适应。
+   */
+  async function setupComposer(camStream, label) {
+    teardownComposer();
+    if (!camStream || !liveEl) return null;
+    const ready = await waitLiveVideoReady();
+    if (!ready) return null;
+
+    const w = liveEl.videoWidth;
+    const h = liveEl.videoHeight;
+    if (!(w > 16 && h > 16)) return null;
+
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d", { alpha: false });
+    if (!ctx) return null;
+    lastComposeSize = { w, h };
+    syncLiveAspect();
+
+    const q = getQuality();
+    const drawFps = Math.max(8, Math.min(24, Number(q.fps) || 12));
+    const draw = () => {
+      try {
+        ctx.drawImage(liveEl, 0, 0, w, h);
+        drawTitleBurn(ctx, label, w, h);
+      } catch (_) {}
+    };
+    draw();
+    const loop = () => {
+      draw();
+      composeRaf = requestAnimationFrame(loop);
+    };
+    composeRaf = requestAnimationFrame(loop);
+    composeTimer = setInterval(draw, Math.round(1000 / drawFps));
+
+    let canvasStream = null;
+    try {
+      canvasStream =
+        typeof canvas.captureStream === "function"
+          ? canvas.captureStream(drawFps)
+          : typeof canvas.mozCaptureStream === "function"
+            ? canvas.mozCaptureStream(drawFps)
+            : null;
+    } catch (_) {
+      canvasStream = null;
+    }
+    if (!canvasStream?.getVideoTracks?.().length) {
+      teardownComposer();
+      return null;
+    }
+    const composed = new MediaStream([
+      ...canvasStream.getVideoTracks(),
+      ...camStream.getAudioTracks(),
+    ]);
+    composeStream = composed;
+    return composed;
   }
 
   function showPreviewMode() {
@@ -316,6 +558,7 @@ export function createSystemCamera({ $, toast }) {
   }
 
   function showPlayerMode() {
+    setPreviewWarming(false);
     if (previewEl) previewEl.hidden = true;
     if (playerEl) playerEl.hidden = false;
     if (finishBtn) finishBtn.disabled = true;
@@ -388,54 +631,52 @@ export function createSystemCamera({ $, toast }) {
     resize = null;
   }
 
-  function openSetupDialog() {
-    if (!setupDialog) {
-      startRecord().catch((err) => console.warn(err));
-      return;
-    }
-    if (setupRes) setupRes.value = resKey;
-    if (setupFps) setupFps.value = String(fps);
-    setupDialog.classList.remove("hidden");
-  }
-
-  function closeSetupDialog() {
-    setupDialog?.classList.add("hidden");
-  }
-
-  function confirmSetup() {
-    const nextRes = setupRes?.value || resKey;
-    const nextFps = Number(setupFps?.value || fps);
-    resKey = RES_PRESETS[nextRes] ? nextRes : "720p";
-    fps = FPS_PRESETS.includes(nextFps) ? nextFps : 30;
-    writePref(PREFS.res, resKey);
-    writePref(PREFS.fps, fps);
-    closeSetupDialog();
-    startRecord().catch((err) => {
-      console.warn(err);
-      const msg = String(err?.message || err || "");
-      if (/NotAllowed|Permission|denied/i.test(msg)) toast("请允许使用摄像头和麦克风");
-      else if (/NotFound|DevicesNotFound/i.test(msg)) toast("没有找到摄像头");
-      else toast(msg || "无法开始录像");
-    });
-  }
-
   async function openStream() {
     if (!navigator.mediaDevices?.getUserMedia) throw new Error("当前环境不支持摄像头");
-    const q = RES_PRESETS[resKey] || RES_PRESETS["720p"];
-    const video = {
-      facingMode: { ideal: facing },
-      width: { ideal: q.w },
-      height: { ideal: q.h },
-      frameRate: { ideal: fps, max: fps },
-    };
+    const q = getQuality();
+    // ideal 拉到最高；设备不支持时由浏览器落到本机实际最高档
     try {
-      return await navigator.mediaDevices.getUserMedia({ audio: true, video });
+      return await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: false,
+          autoGainControl: true,
+          channelCount: 1,
+        },
+        video: {
+          facingMode: { ideal: facing },
+          width: { ideal: q.width },
+          height: { ideal: q.height },
+          frameRate: { ideal: q.fps, max: 60 },
+        },
+      });
     } catch (_) {
       return navigator.mediaDevices.getUserMedia({
         audio: true,
-        video: { facingMode: facing, frameRate: { ideal: fps } },
+        video: { facingMode: facing },
       });
     }
+  }
+
+  function buildVideoFileName() {
+    return `${sanitizeFileName(sessionTitle || readQuestionTitle())}.mp4`;
+  }
+
+  /** 仅当未实时烧录且格式不是 MP4 时，才走慢路径重编码 */
+  async function remuxIfNeeded(srcBlob, { burn = false } = {}) {
+    const q = getQuality();
+    const size = lastComposeSize || { w: q.width, h: q.height };
+    const title = sessionTitle || readQuestionTitle() || "笔译录像";
+    sessionTitle = title;
+    const out = await remuxToMp4(srcBlob, {
+      width: size.w,
+      height: size.h,
+      fps: q.fps,
+      videoBits: q.videoBits,
+      burnTitle: burn ? title : "",
+    });
+    if (burn) titleBurned = true;
+    return out;
   }
 
   async function startRecord() {
@@ -444,14 +685,18 @@ export function createSystemCamera({ $, toast }) {
 
     blob = null;
     chunks = [];
+    sessionTitle = readQuestionTitle() || "笔译录像";
+    titleBurned = false;
+    lastComposeSize = null;
     revokeUrl();
     if (playbackEl) {
       playbackEl.removeAttribute("src");
       playbackEl.load?.();
     }
 
-    const q = RES_PRESETS[resKey] || RES_PRESETS["720p"];
+    const q = getQuality();
     stream = await openStream();
+    setupAudioKeepalive(stream);
     liveEl.srcObject = stream;
     liveEl.muted = true;
     liveEl.playsInline = true;
@@ -460,18 +705,48 @@ export function createSystemCamera({ $, toast }) {
       await liveEl.play();
     } catch (_) {}
 
-    mime = pickMp4Mime() || pickAnyMime();
-    const opts = {
-      videoBitsPerSecond: q.bits,
-    };
-    if (mime) opts.mimeType = mime;
+    showPreviewMode();
+    setPreviewWarming(true);
+    ensureFloatVisible();
+    setLiveBadge(sessionTitle);
+    setTip("正在打开摄像头…");
+
+    const readySize = await waitLiveVideoReady();
+    setPreviewWarming(false);
+    if (readySize) lastComposeSize = readySize;
+    syncLiveAspect();
+
+    let recordStream = stream;
     try {
-      recorder = new MediaRecorder(stream, opts);
+      const composed = await setupComposer(stream, sessionTitle);
+      if (composed) {
+        recordStream = composed;
+        titleBurned = true;
+      }
+    } catch (err) {
+      console.warn(err);
+    }
+
+    const apple = isAppleWebKit();
+    mime = pickVideoMime();
+    const opts = {};
+    if (mime) opts.mimeType = mime;
+    if (!apple) {
+      opts.videoBitsPerSecond = q.videoBits;
+      opts.audioBitsPerSecond = 128000;
+    } else {
+      opts.videoBitsPerSecond = Math.max(q.videoBits, 400000);
+      opts.audioBitsPerSecond = 128000;
+    }
+    try {
+      recorder = new MediaRecorder(recordStream, opts);
     } catch (_) {
       try {
-        recorder = new MediaRecorder(stream, { videoBitsPerSecond: q.bits, mimeType: "video/mp4" });
+        recorder = mime
+          ? new MediaRecorder(recordStream, { mimeType: mime })
+          : new MediaRecorder(recordStream);
       } catch {
-        recorder = new MediaRecorder(stream);
+        recorder = new MediaRecorder(recordStream);
       }
     }
     mime = recorder.mimeType || mime || "video/mp4";
@@ -479,14 +754,15 @@ export function createSystemCamera({ $, toast }) {
     recorder.ondataavailable = (e) => {
       if (e.data?.size) chunks.push(e.data);
     };
-    recorder.start(1000);
+    try {
+      recorder.start(1000);
+    } catch (_) {
+      recorder.start();
+    }
     recording = true;
     startTimer();
     syncBtn();
-    showPreviewMode();
-    ensureFloatVisible();
-    setTip(`录像中 · ${q.label} · ${fps}fps · 点「完成」结束`);
-    toast(`已开始录像（${q.label} · ${fps}fps）`);
+    setTip("");
   }
 
   function finishRecord() {
@@ -500,25 +776,28 @@ export function createSystemCamera({ $, toast }) {
       }
       recorder.onstop = async () => {
         recording = false;
+        lastTapAt = 0;
         stopTimer();
         syncBtn();
         let out = new Blob(chunks, { type: mime || "video/mp4" });
         chunks = [];
         stopTracks();
+        if (!sessionTitle) sessionTitle = readQuestionTitle() || "笔译录像";
 
-        // 强制落成 MP4：若录出来不是 mp4，则重编码
-        if (!/mp4|avc1|h264/i.test(out.type || mime || "")) {
+        // 实时烧录成功：直出，不再整片重编码（与 PTE 一致）
+        // 仅当格式不是 MP4，或实时烧录失败时才走慢路径
+        const needFormat = !/mp4|avc1|h264/i.test(out.type || mime || "");
+        if (needFormat || !titleBurned) {
           remuxing = true;
-          setTip("正在转成 MP4…");
+          setTip(needFormat ? "正在转成 MP4…" : `正在补烧「${sessionTitle}」…`);
           showPlayerMode();
           try {
-            const q = RES_PRESETS[resKey] || RES_PRESETS["720p"];
-            out = await remuxToMp4(out, { width: q.w, height: q.h, fps, videoBits: q.bits });
+            out = await remuxIfNeeded(out, { burn: !titleBurned });
             mime = out.type || "video/mp4";
-            toast("已转为 MP4");
           } catch (err) {
             console.warn(err);
-            toast("MP4 转换失败，将按原格式保存");
+            if (needFormat) toast("MP4 转换失败，将按原格式保存");
+            else toast("题名烧录失败，可仍保存原片");
           } finally {
             remuxing = false;
           }
@@ -535,11 +814,14 @@ export function createSystemCamera({ $, toast }) {
           playbackEl.load?.();
         }
         showPlayerMode();
-        setTip("录像完成 · 可播放或保存为 MP4");
-        toast("录像完成");
+        setTip(titleBurned ? `录像完成 · 「${sessionTitle}」` : "录像完成 · 可播放或保存为 MP4");
+        toast(titleBurned ? `录像完成（${sessionTitle}）` : "录像完成");
         resolve(blob);
       };
       try {
+        try {
+          if (recorder.state === "recording") recorder.requestData();
+        } catch (_) {}
         recorder.stop();
       } catch (_) {
         recording = false;
@@ -565,6 +847,8 @@ export function createSystemCamera({ $, toast }) {
     recorder = null;
     recording = false;
     remuxing = false;
+    sessionTitle = "";
+    titleBurned = false;
     stopTimer();
     stopTracks();
     revokeUrl();
@@ -574,7 +858,6 @@ export function createSystemCamera({ $, toast }) {
       playbackEl.removeAttribute("src");
     }
     hideFloat();
-    closeSetupDialog();
     syncBtn();
     setTimerText(0);
     setTip("");
@@ -582,7 +865,7 @@ export function createSystemCamera({ $, toast }) {
 
   async function rerecord() {
     await closeAll();
-    openSetupDialog();
+    beginRecord();
   }
 
   async function togglePlay() {
@@ -610,31 +893,32 @@ export function createSystemCamera({ $, toast }) {
       return;
     }
     let out = blob;
-    if (!/mp4|avc1|h264/i.test(out.type || "")) {
+    const needFormat = !/mp4|avc1|h264/i.test(out.type || "");
+    if (needFormat || !titleBurned) {
       remuxing = true;
-      setTip("正在转成 MP4…");
+      setTip(needFormat ? "正在转成 MP4…" : `正在补烧「${sessionTitle || readQuestionTitle() || "题名"}」…`);
       try {
-        const q = RES_PRESETS[resKey] || RES_PRESETS["720p"];
-        out = await remuxToMp4(out, { width: q.w, height: q.h, fps, videoBits: q.bits });
+        out = await remuxIfNeeded(out, { burn: !titleBurned });
         blob = out;
+        mime = out.type || "video/mp4";
         revokeUrl();
         objectUrl = URL.createObjectURL(blob);
         if (playbackEl) playbackEl.src = objectUrl;
       } catch (err) {
         remuxing = false;
-        toast(err?.message || "转 MP4 失败");
+        toast(err?.message || "转 MP4 / 烧录失败");
         return;
       } finally {
         remuxing = false;
       }
     }
 
-    const name = `笔译录像_${new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19)}.mp4`;
+    const name = buildVideoFileName();
     const Cap = window.Capacitor;
     const isNative = !!(Cap?.isNativePlatform && Cap.isNativePlatform());
     const FS = Cap?.Plugins?.Filesystem;
     const Media = Cap?.Plugins?.Media;
-    setTip("正在保存 MP4…");
+    setTip(`正在保存「${name}」…`);
     try {
       if (isNative && FS?.writeFile) {
         const base64 = await blobToBase64(out);
@@ -654,8 +938,8 @@ export function createSystemCamera({ $, toast }) {
             album = true;
           } catch (_) {}
         }
-        toast(album ? "MP4 已保存到相册" : "MP4 已保存到 App 文件（pte-videos）");
-        setTip(album ? "已保存到相册" : "已保存到本地");
+        toast(album ? `已保存到相册：${name}` : `已保存到 App 文件：${name}`);
+        setTip(album ? `已保存到相册：${name}` : `已保存：${name}`);
         return;
       }
       const a = document.createElement("a");
@@ -664,8 +948,8 @@ export function createSystemCamera({ $, toast }) {
       document.body.appendChild(a);
       a.click();
       a.remove();
-      toast("已开始下载 MP4");
-      setTip("已触发 MP4 下载");
+      toast(`已开始下载：${name}`);
+      setTip(`已触发下载：${name}`);
     } catch (err) {
       toast(err?.message || "保存失败");
       setTip("保存失败");
@@ -693,7 +977,7 @@ export function createSystemCamera({ $, toast }) {
       await closeAll();
       return;
     }
-    openSetupDialog();
+    beginRecord();
   }
 
   function onPointerDown(e) {
@@ -709,47 +993,16 @@ export function createSystemCamera({ $, toast }) {
   }
 
   function onPointerMove(e) {
-    if (resize && resize.pid === e.pointerId) {
-      const next = resize.startW + (e.clientX - resize.startX);
-      applyFloatWidth(next, { persist: false });
-      e.preventDefault();
-      return;
-    }
     if (!drag || drag.pid !== e.pointerId) return;
     placeFloat(e.clientX - drag.dx, e.clientY - drag.dy);
   }
 
   function onPointerUp(e) {
-    if (resize && resize.pid === e.pointerId) {
-      const w = applyFloatWidth(floatEl.getBoundingClientRect().width);
-      resize = null;
-      floatEl.classList.remove("is-resizing");
-      try {
-        resizeHandle?.releasePointerCapture?.(e.pointerId);
-      } catch (_) {}
-      setTip(`画面 ${w}px · 可再拖右下角缩放`);
-      return;
-    }
     if (!drag || drag.pid !== e.pointerId) return;
     drag = null;
     floatEl.classList.remove("is-dragging");
     try {
       floatEl.releasePointerCapture(e.pointerId);
-    } catch (_) {}
-  }
-
-  function onResizeDown(e) {
-    if (e.button != null && e.button !== 0) return;
-    if (floatEl.classList.contains("is-minimized")) return;
-    e.stopPropagation();
-    e.preventDefault();
-    const rect = floatEl.getBoundingClientRect();
-    resize = { startX: e.clientX, startW: rect.width, pid: e.pointerId };
-    drag = null;
-    floatEl.classList.add("is-resizing");
-    floatEl.classList.remove("is-dragging");
-    try {
-      resizeHandle.setPointerCapture(e.pointerId);
     } catch (_) {}
   }
 
@@ -761,11 +1014,6 @@ export function createSystemCamera({ $, toast }) {
   playBtn?.addEventListener("click", () => togglePlay().catch((err) => console.warn(err)));
   saveBtn?.addEventListener("click", () => saveLocal().catch((err) => console.warn(err)));
   rerecordBtn?.addEventListener("click", () => rerecord().catch((err) => console.warn(err)));
-  setupCancel?.addEventListener("click", () => closeSetupDialog());
-  setupStart?.addEventListener("click", () => confirmSetup());
-  setupDialog?.addEventListener("click", (e) => {
-    if (e.target === setupDialog) closeSetupDialog();
-  });
   playbackEl?.addEventListener("ended", () => {
     if (playBtn) playBtn.textContent = "播放";
   });
@@ -776,14 +1024,47 @@ export function createSystemCamera({ $, toast }) {
     if (playBtn) playBtn.textContent = "暂停";
   });
 
+  function onDocTapDown(e) {
+    if (!recording || remuxing) return;
+    if (e.pointerType === "mouse" && e.button != null && e.button !== 0) return;
+    tapDownX = e.clientX;
+    tapDownY = e.clientY;
+    tapDownAt = Date.now();
+  }
+
+  function onDocTapUp(e) {
+    if (!recording || remuxing) return;
+    if (e.pointerType === "mouse" && e.button != null && e.button !== 0) return;
+    if (e.target?.closest?.("button, input, a, select, textarea, label, [data-camera-resize], .app-dialog")) {
+      lastTapAt = 0;
+      return;
+    }
+    const moved = Math.hypot(e.clientX - tapDownX, e.clientY - tapDownY);
+    if (moved > 22 || Date.now() - tapDownAt > 480) {
+      lastTapAt = 0;
+      return;
+    }
+    const now = Date.now();
+    const gap = now - lastTapAt;
+    const dist = Math.hypot(e.clientX - lastTapX, e.clientY - lastTapY);
+    if (gap > 0 && gap < 360 && dist < 56) {
+      lastTapAt = 0;
+      drag = null;
+      floatEl.classList.remove("is-dragging");
+      finishRecord().catch((err) => console.warn(err));
+      return;
+    }
+    lastTapAt = now;
+    lastTapX = e.clientX;
+    lastTapY = e.clientY;
+  }
+
   floatEl.addEventListener("pointerdown", onPointerDown);
   floatEl.addEventListener("pointermove", onPointerMove);
   floatEl.addEventListener("pointerup", onPointerUp);
   floatEl.addEventListener("pointercancel", onPointerUp);
-  resizeHandle?.addEventListener("pointerdown", onResizeDown);
-  resizeHandle?.addEventListener("pointermove", onPointerMove);
-  resizeHandle?.addEventListener("pointerup", onPointerUp);
-  resizeHandle?.addEventListener("pointercancel", onPointerUp);
+  document.addEventListener("pointerdown", onDocTapDown, true);
+  document.addEventListener("pointerup", onDocTapUp, true);
   window.addEventListener("resize", () => {
     if (floatEl.hidden) return;
     restoreFloatWidth();
@@ -797,5 +1078,5 @@ export function createSystemCamera({ $, toast }) {
   syncBtn();
   setTip("");
 
-  return { open: () => openSetupDialog(), stop: () => closeAll() };
+  return { open: () => beginRecord(), stop: () => closeAll() };
 }

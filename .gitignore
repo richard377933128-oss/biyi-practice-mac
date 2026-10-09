@@ -53,3 +53,9 @@ www/models/**
 !www/models/README.md
 www/js/vendor/transformers/*.map
 
+
+# WorkBuddy 本地数据
+.workbuddy/
+
+# Xcode 构建产物（DerivedData）
+mobile/ios/build/

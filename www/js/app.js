@@ -1,9 +1,9 @@
-import { bindVoiceMemo } from "./voice-memo.js?v=20261004a";
-import { createTranslation } from "./translation.js?v=20261004g";
-import { createScreenRecord } from "./screen-record.js?v=20261003v";
-import { createSystemCamera } from "./system-camera.js?v=20261003i";
-import { createEdgeSpeech, getTtsEngine, setTtsEngine, getSavedVoice, setSavedVoice, ROTATE_VOICE, isRotateVoice, rotateVoiceAt, peekRotateVoice } from "./edge-tts.js?v=20261005n";
-import { isLockStressOn, setLockStressOn } from "./lock-screen.js?v=20261004t";
+import { bindVoiceMemo } from "./voice-memo.js?v=20261009lib";
+import { createTranslation } from "./translation.js?v=20261009lib";
+import { createScreenRecord } from "./screen-record.js?v=20261009lib";
+import { createSystemCamera } from "./system-camera.js?v=20261009lib";
+import { createEdgeSpeech, getTtsEngine, setTtsEngine, getSavedVoice, setSavedVoice, ROTATE_VOICE, isRotateVoice, rotateVoiceAt, peekRotateVoice } from "./edge-tts.js?v=20261009lib";
+import { isLockStressOn, setLockStressOn } from "./lock-screen.js?v=20261009lib";
 import {
   CUSTOM_BANK_CODE,
   CUSTOM_ADD_CODE,
@@ -21,13 +21,13 @@ import {
   parseImportText,
   readSrtFile,
   titleFromSrtFileName,
-} from "./custom-texts.js?v=20261006enzh";
+} from "./custom-texts.js?v=20261009lib";
 import {
   translateZhToEn,
   bindTranslateEngineUi,
   loadTranslatePrefs,
   polishAndTranslateZhLinesViaDeepSeek,
-} from "./en-zh.js?v=20261005dirty";
+} from "./en-zh.js?v=20261009lib";
 import {
   lookupEnWord,
   showEnWordTip,
@@ -39,16 +39,8 @@ import {
   applyStressToWordEl,
   markStressOnWord,
   formatPhonetic,
-} from "./en-word-dict.js?v=20261005stress";
-import { addWord, hasWord, bindWordbook } from "./wordbook.js?v=20261005ui";
-import {
-  hasFullArticleAudio,
-  getFullArticleAudioMeta,
-  saveFullArticleAudio,
-  loadFullArticleAudioBlob,
-  deleteFullArticleAudio,
-  playImportedFullAudio,
-} from "./full-article-audio.js?v=20261006audio";
+} from "./en-word-dict.js?v=20261009lib";
+import { addWord, hasWord, bindWordbook } from "./wordbook.js?v=20261009lib";
 import {
   clampDictationTyped,
   autoAppendDictationExtras,
@@ -189,68 +181,54 @@ function filterFriendsList(list, code) {
 }
 
 const SENSE_COLLAPSE_KEY = "biyi_sense_collapsed";
-const SENSE_PER_PAGE = 3;
-let sensePageScrollRaf = 0;
-let sensePagerBound = false;
+let senseScrollBound = false;
 let senseResizeTimer = 0;
-let sensePagerPageCount = 0;
-/** @type {{idx:number,sg:any}[]} */
-let sensePagerItems = [];
-/** 已构建 DOM 的页码 */
-let sensePagerBuilt = new Set();
-/** 换题/整表重渲时递增，取消旧的重音标注任务（同一次构建的多页互不取消） */
+/** 当前题有效意群数（英文/中文至少有其一） */
+let senseItemCount = 0;
+/** 换题/整表重渲时递增，取消旧的重音标注任务 */
 let senseAnnotateGen = 0;
+/** 意群顺序朗读 */
+let sensePlayToken = 0;
+let sensePlayPhase = "";
+let sensePlayNo = 0;
+let sensePlayTotal = 0;
+let sensePlayLastClick = 0;
+/** @type {{idx:number,en:string,zh:string}[]} 意群朗读数据源（renderSenseChips 时更新） */
+let senseSpeakItems = [];
 
 function isSenseCollapsed() {
-  return localStorage.getItem(SENSE_COLLAPSE_KEY) === "1";
+  // 默认折叠：只展开笔译，减少首屏信息
+  return localStorage.getItem(SENSE_COLLAPSE_KEY) !== "0";
 }
 
-function sensePagerPageIndex() {
-  const block = $("#sense-block");
-  if (!block) return 0;
-  const w = block.clientWidth || 1;
-  return Math.max(0, Math.round(block.scrollLeft / w));
+function isSensePlaying() {
+  return !!$("#btn-sense-play")?.classList.contains("is-playing");
 }
 
-function syncSensePageMeta() {
+function syncSenseMeta() {
   const meta = $("#sense-fold-meta");
   if (!meta) return;
-  const n = sensePagerItems.length;
-  const pages = sensePagerPageCount || 0;
-  if (!n) {
-    meta.textContent = "";
-    return;
-  }
-  if (pages > 1) {
-    const page = Math.min(pages, sensePagerPageIndex() + 1);
-    meta.textContent = `（${n} · ${page}/${pages}）`;
-  } else {
-    meta.textContent = `（${n}）`;
-  }
+  meta.textContent = senseItemCount ? `（${senseItemCount}）` : "";
 }
 
 function syncSenseFoldUi() {
   const section = $("#sense-section");
   const btn = $("#btn-sense-fold");
+  const playBtn = $("#btn-sense-play");
   const collapsed = isSenseCollapsed();
   section?.classList.toggle("is-collapsed", collapsed);
   if (btn) {
     btn.setAttribute("aria-expanded", collapsed ? "false" : "true");
-    btn.title = collapsed ? "展开意群" : "折叠意群；展开后左右滑动翻页";
+    btn.title = collapsed ? "展开意群" : "折叠意群；展开后上下滑动浏览";
   }
-  syncSensePageMeta();
+  if (playBtn) playBtn.hidden = collapsed || !senseItemCount;
+  syncSenseMeta();
 }
 
 function setSenseCollapsed(collapsed) {
-  const wasCollapsed = isSenseCollapsed();
   localStorage.setItem(SENSE_COLLAPSE_KEY, collapsed ? "1" : "0");
+  if (collapsed && isSensePlaying()) stopSensePlay();
   syncSenseFoldUi();
-  // 从折叠展开时需按真实宽度重新分页（display:none 时量不准）
-  if (wasCollapsed && !collapsed && state.question) {
-    requestAnimationFrame(() => {
-      renderSenseChips(state.question, { keepPage: 0 });
-    });
-  }
   try {
     document.dispatchEvent(new CustomEvent("biyi-fold-change"));
   } catch (_) {}
@@ -321,99 +299,6 @@ function createSenseChip(sg, idx) {
   return chip;
 }
 
-function pageIndexForSenseIdx(senseIdx) {
-  const i = sensePagerItems.findIndex((x) => x.idx === senseIdx);
-  if (i < 0) return 0;
-  return Math.floor(i / SENSE_PER_PAGE);
-}
-
-/** 意群区目标高度：尽量占满上方空白 */
-function sensePageTargetHeight() {
-  return Math.max(280, Math.min(Math.round(window.innerHeight * 0.5), 460));
-}
-
-/**
- * 自适应放大字号，让本页 3 个气泡尽量填满可用高度（仍不溢出）
- */
-function fitSensePageFontsForPage(page) {
-  if (!page || !page.querySelector(".sense-chip")) return;
-  const maxH = sensePageTargetHeight();
-  page.classList.remove("is-filled");
-  page.style.height = "auto";
-  page.style.maxHeight = "none";
-  page.style.minHeight = "";
-  page.style.overflow = "hidden";
-  page.querySelectorAll(".sense-chip").forEach((chip) => {
-    chip.style.flex = "";
-    chip.style.justifyContent = "";
-  });
-
-  let lo = 15;
-  let hi = 36;
-  let best = 15;
-  while (lo <= hi) {
-    const mid = (lo + hi) >> 1;
-    page.style.setProperty("--sense-en-fs", `${mid}px`);
-    page.style.setProperty("--sense-zh-fs", `${Math.max(12, Math.round(mid * 0.78))}px`);
-    void page.offsetHeight;
-    if (page.scrollHeight <= maxH + 2) {
-      best = mid;
-      lo = mid + 1;
-    } else {
-      hi = mid - 1;
-    }
-  }
-  page.style.setProperty("--sense-en-fs", `${best}px`);
-  page.style.setProperty("--sense-zh-fs", `${Math.max(12, Math.round(best * 0.78))}px`);
-  void page.offsetHeight;
-
-  // 字号已到上限仍偏矮：固定页高 + 气泡均分拉伸，吃掉空白
-  page.style.height = `${maxH}px`;
-  page.style.maxHeight = `${maxH}px`;
-  page.style.minHeight = `${maxH}px`;
-  page.classList.add("is-filled");
-  page.querySelectorAll(".sense-chip").forEach((chip) => {
-    chip.style.flex = "1 1 0";
-    chip.style.justifyContent = "center";
-  });
-}
-
-function buildSensePage(block, pageIdx) {
-  if (!block || pageIdx < 0 || pageIdx >= sensePagerPageCount) return;
-  if (sensePagerBuilt.has(pageIdx)) return;
-  const page = block.querySelector(`.sense-page[data-page="${pageIdx}"]`);
-  if (!page) return;
-  const start = pageIdx * SENSE_PER_PAGE;
-  const slice = sensePagerItems.slice(start, start + SENSE_PER_PAGE);
-  const frag = document.createDocumentFragment();
-  for (const { idx, sg } of slice) {
-    const chip = createSenseChip(sg, idx);
-    if (chip) frag.appendChild(chip);
-  }
-  page.replaceChildren(frag);
-  sensePagerBuilt.add(pageIdx);
-  applySenseChipFonts(page);
-  fitSensePageFontsForPage(page);
-
-  // 同一次换题内多页并行标注，互不取消；只有整表重渲才作废
-  const gen = senseAnnotateGen;
-  annotateEnTapStress(page, {
-    isStale: () => gen !== senseAnnotateGen,
-  })
-    .then(() => {
-      if (gen !== senseAnnotateGen) return;
-      applySenseChipFonts(page);
-      fitSensePageFontsForPage(page);
-      // 笔译描红行复用意群 chip 重音，标注完成后通知刷新
-      try {
-        document.dispatchEvent(
-          new CustomEvent("biyi-sense-stress-ready", { detail: { pageIdx } })
-        );
-      } catch (_) {}
-    })
-    .catch((err) => console.warn(err));
-}
-
 /** 把当前练习页中/英文字体写到意群节点（兼容 iOS button） */
 function applySenseChipFonts(root) {
   const host = root || $("#sense-block");
@@ -439,44 +324,160 @@ function applySenseChipFonts(root) {
   }
 }
 
-/** 只构建中心页及左右邻页，避免一次挂上千个意群 DOM */
-function ensureSensePagesAround(centerPage) {
+/** 把某个意群 chip 滚到可视区（垂直列表） */
+function scrollSenseChipIntoView(chipEl, { smooth = true } = {}) {
   const block = $("#sense-block");
-  if (!block || !sensePagerPageCount) return;
-  const c = Math.max(0, Math.min(sensePagerPageCount - 1, Number(centerPage) || 0));
-  for (const p of [c - 1, c, c + 1]) {
-    if (p >= 0 && p < sensePagerPageCount) buildSensePage(block, p);
+  if (!block || !chipEl || !block.contains(chipEl)) return;
+  const top = chipEl.offsetTop - block.offsetTop;
+  const viewTop = block.scrollTop;
+  const viewBottom = viewTop + block.clientHeight;
+  if (top >= viewTop && top + chipEl.offsetHeight <= viewBottom) return;
+  block.scrollTo({
+    top: Math.max(0, top - 8),
+    behavior: smooth ? "smooth" : "auto",
+  });
+}
+
+/** 高亮正在朗读的意群并滚入可视区 */
+function focusSenseChipByIdx(idx, { scroll = true } = {}) {
+  const chip = document.querySelector(`#sense-block .sense-chip[data-sense-idx="${idx}"]`);
+  if (!chip) return;
+  clearEnTapSpeaking();
+  chip.classList.add("is-speaking");
+  if (scroll) scrollSenseChipIntoView(chip);
+}
+
+function paintSensePlayBtn() {
+  const btn = $("#btn-sense-play");
+  if (!btn || !btn.classList.contains("is-playing")) {
+    syncPlayButtonsMutex();
+    return;
+  }
+  syncPlayButtonsMutex();
+  const paused = !!enFullSpeech.isPaused?.();
+  const prog = sensePlayTotal ? ` ${Math.min(sensePlayNo, sensePlayTotal)}/${sensePlayTotal}` : "";
+  if (paused) {
+    btn.textContent = `继续${prog}`;
+    btn.title = "已暂停，点一下继续朗读；快速双击停止";
+    btn.classList.add("is-paused");
+    return;
+  }
+  btn.classList.remove("is-paused");
+  btn.title = "意群循环朗读中，点一下暂停；快速双击停止";
+  btn.textContent = sensePlayPhase === "prepare" ? `准备${prog}` : sensePlayNo ? `朗读${prog}` : "朗读中…";
+}
+
+function resetSensePlayBtn() {
+  const btn = $("#btn-sense-play");
+  sensePlayPhase = "";
+  sensePlayNo = 0;
+  sensePlayTotal = 0;
+  clearEnTapSpeaking();
+  btn?.classList.remove("is-playing", "is-paused");
+  if (btn) {
+    btn.textContent = "意群朗读";
+    btn.title = "意群顺序循环朗读（音色在顶部「音色」里选）";
+  }
+  syncPlayButtonsMutex();
+}
+
+function stopSensePlay() {
+  sensePlayToken += 1;
+  enFullSpeech.stopPlayback?.();
+  resetSensePlayBtn();
+}
+
+/** 意群顺序循环朗读：高亮当前卡片并自动滚动，读完一遍从头再来 */
+async function playSenseGroups(startAt = 1) {
+  const items = senseSpeakItems.filter((it) => it.en);
+  if (!items.length) {
+    toast("暂无英文意群");
+    return;
+  }
+  if (bankPlaylistActive) stopBankPlaylist();
+  if (isEnFullPlaying()) stopEnFullArticle();
+  const btn = $("#btn-sense-play");
+  const token = ++sensePlayToken;
+  enFullPlayToken += 1; // 打断全文朗读
+  senseSpeakToken += 1; // 打断单条意群朗读
+  enFullSpeech.stopPlayback?.();
+  btn?.classList.add("is-playing");
+  syncPlayButtonsMutex();
+
+  // 第一圈可从中间起；读完后自动从头再来（循环），直到用户点停
+  let roundStart = Math.min(Math.max(0, Math.floor(Number(startAt) || 1) - 1), items.length - 1);
+
+  try {
+    while (token === sensePlayToken) {
+      const off = roundStart;
+      roundStart = 0;
+      const lines = items.slice(off).map((it) => it.en);
+      sensePlayPhase = "";
+      sensePlayNo = off + 1;
+      sensePlayTotal = items.length;
+      paintSensePlayBtn();
+      focusSenseChipByIdx(items[off].idx);
+
+      await enFullSpeech.unlockAudio?.();
+      const queued = await enFullSpeech.speakLines?.(lines, {
+        pauseMs: EN_FULL_LINE_PAUSE_MS,
+        title: "意群朗读",
+        subs: items.slice(off).map((it) => it.zh || ""),
+        offset: off,
+        grandTotal: items.length,
+        voice: getFullVoice() || undefined,
+        onPrepare: (done, total) => {
+          if (token !== sensePlayToken) return;
+          sensePlayPhase = "prepare";
+          sensePlayNo = done;
+          sensePlayTotal = total;
+          paintSensePlayBtn();
+        },
+        onLine: (i, total) => {
+          if (token !== sensePlayToken) return;
+          sensePlayPhase = "play";
+          sensePlayNo = i;
+          sensePlayTotal = total;
+          paintSensePlayBtn();
+          const it = items[i - 1];
+          if (it) focusSenseChipByIdx(it.idx);
+        },
+        onStopped: () => {
+          if (token === sensePlayToken) stopSensePlay();
+        },
+      });
+      if (queued) {
+        if (token !== sensePlayToken || queued.cancelled) return;
+        await sleepMs(EN_FULL_LINE_PAUSE_MS);
+        continue;
+      }
+      for (let i = 0; i < lines.length; i += 1) {
+        if (token !== sensePlayToken) return;
+        await enFullSpeech.waitIfPaused?.();
+        if (token !== sensePlayToken) return;
+        sensePlayPhase = "play";
+        sensePlayNo = off + i + 1;
+        sensePlayTotal = items.length;
+        paintSensePlayBtn();
+        focusSenseChipByIdx(items[off + i].idx);
+        await enFullSpeech.speakOnce(lines[i], { rotateSense: true });
+        if (token !== sensePlayToken) return;
+        if (i < lines.length - 1) await sleepMs(EN_FULL_LINE_PAUSE_MS);
+      }
+      if (token !== sensePlayToken) return;
+      await sleepMs(EN_FULL_LINE_PAUSE_MS);
+    }
+  } catch (err) {
+    if (token === sensePlayToken) toast(err?.message || "意群朗读失败");
+  } finally {
+    if (token === sensePlayToken) resetSensePlayBtn();
   }
 }
 
-function ensureSensePageForSenseIdx(senseIdx) {
-  ensureSensePagesAround(pageIndexForSenseIdx(senseIdx));
-}
-
-function scrollSenseChipPageIntoView(chipEl, { smooth = true } = {}) {
+function bindSenseScrollUi() {
+  if (senseScrollBound) return;
+  senseScrollBound = true;
   const block = $("#sense-block");
-  const page = chipEl?.closest?.(".sense-page");
-  if (!block || !page || !block.contains(page)) return;
-  const left = page.offsetLeft;
-  if (Math.abs(block.scrollLeft - left) < 4) return;
-  block.scrollTo({ left, behavior: smooth ? "smooth" : "auto" });
-}
-
-function bindSensePagerUi() {
-  if (sensePagerBound) return;
-  sensePagerBound = true;
-  const block = $("#sense-block");
-  block?.addEventListener(
-    "scroll",
-    () => {
-      cancelAnimationFrame(sensePageScrollRaf);
-      sensePageScrollRaf = requestAnimationFrame(() => {
-        ensureSensePagesAround(sensePagerPageIndex());
-        syncSensePageMeta();
-      });
-    },
-    { passive: true }
-  );
   block?.addEventListener("click", (e) => {
     const chip = e.target?.closest?.(".sense-chip");
     if (!chip || !block.contains(chip)) return;
@@ -489,77 +490,77 @@ function bindSensePagerUi() {
     }
     speakSenseChip(chip).catch((err) => console.warn(err));
   });
-  const refitSenseFonts = () => {
-    clearTimeout(senseResizeTimer);
-    senseResizeTimer = setTimeout(() => {
-      if (!state.question || isSenseCollapsed()) return;
-      const block = $("#sense-block");
-      if (!block) return;
-      applySenseChipFonts(block);
-      block.querySelectorAll(".sense-page").forEach((page) => {
-        if (page.querySelector(".sense-chip")) fitSensePageFontsForPage(page);
-      });
-    }, 80);
-  };
-  window.addEventListener("resize", () => {
-    clearTimeout(senseResizeTimer);
-    senseResizeTimer = setTimeout(() => {
-      if (!state.question || isSenseCollapsed()) return;
-      const keep = sensePagerPageIndex();
-      renderSenseChips(state.question, { keepPage: keep });
-    }, 180);
+  $("#btn-sense-play")?.addEventListener("click", () => {
+    const btn = $("#btn-sense-play");
+    if (btn?.classList.contains("is-playing")) {
+      const now = Date.now();
+      // 快速双击：停止
+      if (now - sensePlayLastClick < 380) {
+        sensePlayLastClick = 0;
+        stopSensePlay();
+        return;
+      }
+      sensePlayLastClick = now;
+      // 单击：暂停 / 继续
+      if (enFullSpeech.isPaused?.()) enFullSpeech.resumePlayback?.();
+      else enFullSpeech.pausePlayback?.();
+      paintSensePlayBtn();
+      return;
+    }
+    playSenseGroups(1).catch((err) => console.warn(err));
   });
-  // 中/英文字体切换后重新测算意群字号
-  document.addEventListener("biyi-practice-fonts", refitSenseFonts);
+  // 中/英文字体切换后重写字体（兼容 iOS button 不吃父级字体）
+  document.addEventListener("biyi-practice-fonts", () => {
+    clearTimeout(senseResizeTimer);
+    senseResizeTimer = setTimeout(() => {
+      if (!state.question || isSenseCollapsed()) return;
+      applySenseChipFonts($("#sense-block"));
+    }, 80);
+  });
 }
 
-function renderSenseChips(q, { keepPage = 0 } = {}) {
+function renderSenseChips(q) {
   const block = $("#sense-block");
   if (!block) return;
-  bindSensePagerUi();
+  bindSenseScrollUi();
   senseAnnotateGen += 1;
-  sensePagerBuilt = new Set();
-  sensePagerItems = [];
+  if (isSensePlaying()) stopSensePlay(); // 换题/重渲时结束旧朗读
+
   const groups = Array.isArray(q?.sense_groups) ? q.sense_groups : [];
+  const frag = document.createDocumentFragment();
+  let count = 0;
+  senseSpeakItems = [];
   groups.forEach((sg, idx) => {
     const en = String(sg?.english || "").trim();
     const zh = String(sg?.chinese || "").trim();
     if (!en && !zh) return;
-    sensePagerItems.push({ idx, sg });
+    senseSpeakItems.push({ idx, en, zh });
+    const chip = createSenseChip(sg, idx);
+    if (chip) {
+      frag.appendChild(chip);
+      count += 1;
+    }
   });
-
-  if (!sensePagerItems.length) {
-    sensePagerPageCount = 0;
-    block.replaceChildren();
-    syncSenseFoldUi();
-    return;
-  }
-
-  sensePagerPageCount = Math.ceil(sensePagerItems.length / SENSE_PER_PAGE);
-  void block.offsetWidth;
-  const pageWidth = Math.max(
-    160,
-    block.clientWidth ||
-      block.parentElement?.clientWidth ||
-      $("#sense-section")?.clientWidth ||
-      Math.min(window.innerWidth - 32, 720)
-  );
-
-  // 只建空页壳；真正的 chip 按需懒加载（当前页 ±1）
-  const frag = document.createDocumentFragment();
-  for (let pageIdx = 0; pageIdx < sensePagerPageCount; pageIdx += 1) {
-    const page = document.createElement("div");
-    page.className = "sense-page";
-    page.dataset.page = String(pageIdx);
-    page.setAttribute("aria-label", `意群第 ${pageIdx + 1} 页`);
-    frag.appendChild(page);
-  }
+  senseItemCount = count;
   block.replaceChildren(frag);
-
-  const target = Math.max(0, Math.min(sensePagerPageCount - 1, Number(keepPage) || 0));
-  block.scrollLeft = target * (block.clientWidth || pageWidth);
-  ensureSensePagesAround(target);
+  block.scrollTop = 0;
+  applySenseChipFonts(block);
   syncSenseFoldUi();
+  if (!count) return;
+
+  const gen = senseAnnotateGen;
+  annotateEnTapStress(block, {
+    isStale: () => gen !== senseAnnotateGen,
+  })
+    .then(() => {
+      if (gen !== senseAnnotateGen) return;
+      applySenseChipFonts(block);
+      // 笔译描红行复用意群 chip 重音，标注完成后通知刷新
+      try {
+        document.dispatchEvent(new CustomEvent("biyi-sense-stress-ready"));
+      } catch (_) {}
+    })
+    .catch((err) => console.warn(err));
 }
 
 function stripLeadingQuestionNum(name, num) {
@@ -572,9 +573,10 @@ function stripLeadingQuestionNum(name, num) {
 }
 
 function syncCustomButtons() {
-  // 任意文章都可新增 / 编辑文本
+  // 任意文章都可新增；有当前题才显示「编辑当前」
   $("#btn-custom-text-add")?.classList.remove("hidden");
   $("#btn-custom-text-edit")?.classList.toggle("hidden", !state.question);
+  $("#btn-topbar-text")?.classList.remove("hidden");
 }
 
 function renderQuestion() {
@@ -606,10 +608,7 @@ function renderQuestion() {
 }
 
 function syncNav() {
-  const prev = $("#btn-prev");
-  const next = $("#btn-next");
-  if (prev) prev.disabled = state.index <= 0;
-  if (next) next.disabled = state.index < 0 || state.index >= state.list.length - 1;
+  // 切题已改为左右滑，无上一题/下一题按钮
 }
 
 function buildEnglishFullText(q) {
@@ -695,8 +694,8 @@ function englishFullSpeakLines(text = enFullRawText, lines = enFullLines) {
 }
 
 function isEnFullCollapsed() {
-  // 默认展开英文全文
-  return localStorage.getItem(EN_FULL_COLLAPSE_KEY) === "1";
+  // 默认折叠：只展开笔译
+  return localStorage.getItem(EN_FULL_COLLAPSE_KEY) !== "0";
 }
 
 function syncEnFullFoldUi() {
@@ -711,37 +710,15 @@ function syncEnFullFoldUi() {
     btn.title = collapsed ? "展开全文" : "折叠全文";
   }
   if (playBtn) playBtn.hidden = collapsed || !enFullRawText;
-  const dlBtn = $("#btn-en-full-dl");
-  if (dlBtn) dlBtn.hidden = collapsed || !enFullRawText;
-  paintEnFullImportBtn();
   const q = currentQuestion();
   const { count } = q ? buildEnglishFullText(q) : { count: 0 };
   if (meta) meta.textContent = count ? `（${count}）` : "";
-}
-
-function paintEnFullImportBtn() {
-  const btn = $("#btn-en-full-import");
-  if (!btn) return;
-  const collapsed = isEnFullCollapsed();
-  btn.hidden = collapsed || !enFullRawText;
-  const key = passageMarkKey(currentQuestion());
-  const info = key ? getFullArticleAudioMeta(key) : null;
-  if (info) {
-    btn.classList.add("is-imported");
-    btn.textContent = "清除导入音频";
-    btn.title = `已导入：${info.fileName || "音频"}（${Math.max(1, Math.round((info.size || 0) / 1024))} KB）。点此清除；全文朗读会优先播导入音频`;
-  } else {
-    btn.classList.remove("is-imported");
-    btn.textContent = "导入全文音频";
-    btn.title = "从本机选择整篇文章音频（mp3/m4a/wav 等）；有导入时全文朗读优先播它";
-  }
 }
 
 function setEnFullCollapsed(collapsed) {
   localStorage.setItem(EN_FULL_COLLAPSE_KEY, collapsed ? "1" : "0");
   if (collapsed) {
     enFullPlayToken += 1;
-    stopImportedFullAudio();
     enFullSpeech.stopPlayback?.();
     resetEnFullPlayBtn();
   }
@@ -842,9 +819,12 @@ function currentFullLineVoice() {
 
 function resumeEnFullAfterAside(wasPaused) {
   if (wasPaused) return;
-  if (!isEnFullPlaying() || isEnFullCollapsed()) return;
+  const senseOn = isSensePlaying();
+  if (!isEnFullPlaying() && !senseOn) return;
+  if (!isEnFullPlaying() && isSenseCollapsed()) return;
   enFullSpeech.resumePlayback?.();
   renderEnFullPlayBtn();
+  paintSensePlayBtn();
 }
 
 async function speakSenseChip(chip) {
@@ -854,7 +834,7 @@ async function speakSenseChip(chip) {
     return;
   }
   const token = ++senseSpeakToken;
-  const playing = isEnFullPlaying();
+  const playing = isEnFullPlaying() || isSensePlaying();
   const wasPaused = !!enFullSpeech.isPaused?.();
   clearEnTapSpeaking();
   hideEnWordTip();
@@ -969,7 +949,7 @@ function createSenseTtsProgress(chip) {
 async function speakEnFullWord(word, el) {
   const w = String(word || "").trim();
   if (!w) return;
-  const playing = isEnFullPlaying();
+  const playing = isEnFullPlaying() || isSensePlaying();
   const wasPaused = !!enFullSpeech.isPaused?.();
   senseSpeakToken += 1; // 打断正在读的整个意群
   clearEnTapSpeaking();
@@ -1040,9 +1020,6 @@ let enFullProgScrollRaf = 0;
 let enFullScrollRestartTimer = 0;
 /** 点暂停时的句号；拖动改进度后再点继续则从新句重开 */
 let enFullPausedLine = 0;
-/** 用户导入的整篇音频播放器 */
-let importedFullCtrl = null;
-let importedFullActive = false;
 
 /** 把正在朗读的那一对（英文+中文）高亮，可选滚到全文框正中间 */
 function focusEnFullLine(lineNo, { scroll = true } = {}) {
@@ -1102,10 +1079,10 @@ function paintEnFullProgressBtn() {
   }
   if (no > 1 && total) {
     btn.textContent = `从 ${no}/${total} 朗读`;
-    btn.title = `从第 ${no} 句开始朗读全文`;
+    btn.title = `从第 ${no} 句开始单篇循环朗读`;
   } else {
     btn.textContent = "全文朗读";
-    btn.title = "朗读全文（音色在顶部「音色」里选）";
+    btn.title = "单篇文章循环朗读（音色在顶部「音色」里选）";
   }
 }
 
@@ -1159,42 +1136,26 @@ function onEnFullBlockScroll() {
   });
 }
 
-function stopImportedFullAudio() {
-  try {
-    importedFullCtrl?.stop?.();
-  } catch (_) {}
-  importedFullCtrl = null;
-  importedFullActive = false;
-}
-
-function isImportedFullPaused() {
-  return importedFullActive && !!importedFullCtrl?.isPaused?.();
-}
-
 function renderEnFullPlayBtn() {
   const btn = $("#btn-en-full-play");
-  if (!btn || !btn.classList.contains("is-playing")) return;
-  const paused = importedFullActive ? isImportedFullPaused() : !!enFullSpeech.isPaused?.();
-  // 播放中自动跟读滚动；暂停时保留用户拖动的位置；导入整篇音频时不跟读逐句
-  if (!importedFullActive && !paused && enFullPhase === "play" && enFullLineNo) {
+  if (!btn || !btn.classList.contains("is-playing")) {
+    syncPlayButtonsMutex();
+    return;
+  }
+  syncPlayButtonsMutex();
+  const paused = !!enFullSpeech.isPaused?.();
+  if (!paused && enFullPhase === "play" && enFullLineNo) {
     focusEnFullLine(enFullLineNo);
   }
   const prog = enFullLineTotal ? ` ${enFullLineNo}/${enFullLineTotal}` : "";
   if (paused) {
-    btn.textContent = importedFullActive ? `继续播放${prog}` : `继续${prog}`;
-    btn.title = importedFullActive
-      ? "已暂停导入音频，点一下继续"
-      : "已暂停，点一下继续朗读；拖动全文可改起点";
+    btn.textContent = `继续${prog}`;
+    btn.title = "已暂停，点一下继续朗读；拖动全文可改起点";
     btn.classList.add("is-paused");
     return;
   }
   btn.classList.remove("is-paused");
-  if (importedFullActive) {
-    btn.title = "正在播放导入的全文音频，点一下暂停";
-    btn.textContent = enFullLineNo ? `播放${prog}` : "播放导入音频…";
-    return;
-  }
-  btn.title = "朗读中，点一下暂停；拖动全文可跳到该句";
+  btn.title = "单篇循环朗读中，点一下暂停；拖动全文可跳到该句";
   btn.textContent = enFullPhase === "prepare" ? `准备${prog}` : enFullLineNo ? `朗读${prog}` : "朗读中…";
 }
 
@@ -1205,8 +1166,9 @@ function getFullVoice(engine = getTtsEngine()) {
 
 const VOICE_SAMPLE = "Hello, this is how I sound when reading the full text.";
 
-/** 打开音色选择时若正在全文朗读，先停下；关闭后从当前这句用（新）音色接着读 */
+/** 打开音色选择时若正在全文/意群朗读，先停下；关闭后从当前这句用（新）音色接着读 */
 let voiceResumeFrom = 0;
+let voiceResumeSenseFrom = 0;
 
 function closeReadVoiceDialog() {
   const page = $("#view-read-voice");
@@ -1216,8 +1178,11 @@ function closeReadVoiceDialog() {
   window.scrollTo(0, 0);
   enFullSpeech.stopPlayback?.(); // 停掉试听
   const from = voiceResumeFrom;
+  const senseFrom = voiceResumeSenseFrom;
   voiceResumeFrom = 0;
+  voiceResumeSenseFrom = 0;
   if (from > 0) playEnFullArticle(from).catch((err) => console.warn(err));
+  else if (senseFrom > 0) playSenseGroups(senseFrom).catch((err) => console.warn(err));
 }
 
 async function openReadVoiceDialog() {
@@ -1241,6 +1206,13 @@ async function openReadVoiceDialog() {
     voiceResumeFrom = Math.max(1, enFullLineNo || 1);
     stopEnFullArticle();
   }
+  // 正在意群朗读：同理
+  if (isSensePlaying()) {
+    voiceResumeSenseFrom = Math.max(1, sensePlayNo || 1);
+    stopSensePlay();
+  }
+  // 列表播放中改音色：先停掉，避免旧声音继续播
+  if (bankPlaylistActive) stopBankPlaylist();
   // 当前选中 = 当前引擎 + 该引擎下记住的声音
   const curEngine = getTtsEngine() === "apple" ? "apple" : "online";
   const sets = [
@@ -1249,7 +1221,8 @@ async function openReadVoiceDialog() {
   ];
   const desc = $("#read-voice-desc");
   if (desc) {
-    desc.textContent = "统一设置所有朗读的音色：全文朗读、意群、点单词发音和笔译。「按顺序」每读完一个意群就换下一个声音，一圈后再从头。";
+    desc.textContent =
+      "统一设置所有朗读的音色：列表播放、全文朗读、意群、点单词发音和笔译。「按顺序」每读完一个意群就换下一个声音，一圈后再从头。";
   }
   const frag = document.createDocumentFragment();
   for (const set of sets) {
@@ -1325,16 +1298,11 @@ function openReadJumpDialog() {
   const input = $("#read-jump-input");
   if (!n || !dialog || !input) return;
   // 输入时先暂停；取消后恢复到双击之前的状态
-  readJumpResume = importedFullActive ? !isImportedFullPaused() : !enFullPrePaused;
-  if (importedFullActive) importedFullCtrl?.pause?.();
-  else enFullSpeech.pausePlayback?.();
+  readJumpResume = !enFullPrePaused;
+  enFullSpeech.pausePlayback?.();
   renderEnFullPlayBtn();
   const desc = $("#read-jump-desc");
-  if (desc) {
-    desc.textContent = importedFullActive
-      ? `输入 1–${n}：按全文比例跳到导入音频的大致位置`
-      : `输入 1–${n} 之间的序号，从这一句开始朗读`;
-  }
+  if (desc) desc.textContent = `输入 1–${n} 之间的序号，从这一句开始朗读`;
   input.min = "1";
   input.max = String(n);
   input.value = String(Math.min(Math.max(enFullLineNo || 1, 1), n));
@@ -1349,10 +1317,7 @@ function closeReadJumpDialog({ resume = false } = {}) {
   const dialog = $("#read-jump-dialog");
   if (!dialog || dialog.classList.contains("hidden")) return;
   dialog.classList.add("hidden");
-  if (resume && readJumpResume) {
-    if (importedFullActive) importedFullCtrl?.resume?.();
-    else enFullSpeech.resumePlayback?.();
-  }
+  if (resume && readJumpResume) enFullSpeech.resumePlayback?.();
   readJumpResume = false;
   renderEnFullPlayBtn();
 }
@@ -1389,6 +1354,7 @@ function resetEnFullPlayBtn() {
   if (!btn) return;
   btn.classList.remove("is-playing", "is-paused");
   paintEnFullProgressBtn();
+  syncPlayButtonsMutex();
 }
 
 async function playEnFullArticle(startAt = 1) {
@@ -1397,128 +1363,99 @@ async function playEnFullArticle(startAt = 1) {
     toast("暂无英文");
     return;
   }
-  // 从第 startAt 句开始读（序号按全文计）
-  const off = Math.min(Math.max(0, Math.floor(Number(startAt) || 1) - 1), all.length - 1);
-  const lines = all.slice(off);
   const playBtn = $("#btn-en-full-play");
+  if (bankPlaylistActive) stopBankPlaylist();
+  if (isSensePlaying()) stopSensePlay();
   const token = ++enFullPlayToken;
-  stopImportedFullAudio();
   enFullSpeech.stopPlayback?.(); // 打断上一轮（含暂停中的）再重新开始
   clearEnTapSpeaking();
-  enFullPhase = "";
-  enFullLineNo = off + 1;
-  enFullLineTotal = all.length;
-  enFullPlayOffset = off;
-  rememberFullLineVoice(off + 1);
   playBtn?.classList.add("is-playing");
-  renderEnFullPlayBtn();
-  if (off > 0) focusEnFullLine(off + 1); // 先把起点滚到正中间
+  syncPlayButtonsMutex();
 
-  // 有用户导入的整篇音频时优先播放
-  const passageKey = passageMarkKey(currentQuestion());
-  if (passageKey && hasFullArticleAudio(passageKey)) {
-    let playedImport = false;
-    try {
-      const blob = await loadFullArticleAudioBlob(passageKey);
-      if (token !== enFullPlayToken) return;
-      if (blob) {
-        importedFullActive = true;
-        enFullPhase = "play";
-        renderEnFullPlayBtn();
-        await new Promise((resolve, reject) => {
-          importedFullCtrl = playImportedFullAudio(blob, {
-            startRatio: all.length > 1 ? off / all.length : 0,
-            onTime: ({ currentTime, duration }) => {
-              if (token !== enFullPlayToken || !duration) return;
-              const approx = Math.min(
-                all.length,
-                Math.max(1, Math.floor((currentTime / duration) * all.length) + 1)
-              );
-              if (approx !== enFullLineNo) {
-                enFullLineNo = approx;
-                focusEnFullLine(approx, { scroll: true });
-                renderEnFullPlayBtn();
-              }
-            },
-            onEnded: () => resolve(),
-            onError: (err) => reject(err || new Error("播放失败")),
-          });
-        });
-        playedImport = true;
-        if (token === enFullPlayToken) toast("导入音频播放完成");
-      }
-    } catch (err) {
-      if (token !== enFullPlayToken) return;
-      console.warn(err);
-      toast(err?.message || "导入音频播放失败，改用朗读");
-      stopImportedFullAudio();
-    }
-    if (playedImport) {
-      if (token === enFullPlayToken) resetEnFullPlayBtn();
-      return;
-    }
-    if (token !== enFullPlayToken) return;
-    stopImportedFullAudio();
-  }
+  // 第一圈可从中间起；读完后自动从头再来（单篇循环），直到用户点停。
+  // iPhone 本机引擎下 speakLines(loop:true) 在原生队列里自行循环，此 while 只执行一轮；
+  // 其它引擎每轮 resolve 后由此处 sleep + continue 接力循环。
+  let roundStart = Math.min(Math.max(0, Math.floor(Number(startAt) || 1) - 1), all.length - 1);
 
   try {
-    await enFullSpeech.unlockAudio?.();
-    const engine = getTtsEngine();
-    // iPhone 本机：整段交给原生排队朗读，锁屏后也能继续（并出现锁屏播放控制）
-    const queued = await enFullSpeech.speakLines?.(lines, {
-      pauseMs: EN_FULL_LINE_PAUSE_MS,
-      title: "全文朗读",
-      subs: enFullZhLines.slice(off),
-      rich: (() => {
-        const r = enFullRichLines();
-        return r.length === all.length ? r.slice(off) : [];
-      })(),
-      offset: off,
-      grandTotal: all.length,
-      voice: getFullVoice() || undefined,
-      onPrepare: (done, total) => {
-        // 联网：先备齐全部音频，再连续播放（锁屏后不依赖网页逐句下载）
+    while (token === enFullPlayToken) {
+      const off = roundStart;
+      roundStart = 0;
+      const lines = all.slice(off);
+      enFullPhase = "";
+      enFullLineNo = off + 1;
+      enFullLineTotal = all.length;
+      enFullPlayOffset = off;
+      rememberFullLineVoice(off + 1);
+      renderEnFullPlayBtn();
+      if (off > 0) focusEnFullLine(off + 1);
+
+      await enFullSpeech.unlockAudio?.();
+      const queued = await enFullSpeech.speakLines?.(lines, {
+        pauseMs: EN_FULL_LINE_PAUSE_MS,
+        title: "全文朗读",
+        subs: enFullZhLines.slice(off),
+        rich: (() => {
+          const r = enFullRichLines();
+          return r.length === all.length ? r.slice(off) : [];
+        })(),
+        offset: off,
+        grandTotal: all.length,
+        voice: getFullVoice() || undefined,
+        // iPhone 本机引擎：循环交给原生队列无缝衔接（每轮不再 stop→重排，首句不会被截断）；
+        // 其它引擎忽略该参数，仍由此处 while 循环逐轮重读
+        loop: true,
+        onLooped: () => {
+          if (token !== enFullPlayToken) return;
+          enFullPhase = "play";
+          enFullLineNo = off + 1;
+          enFullLineTotal = all.length;
+          rememberFullLineVoice(off + 1);
+          renderEnFullPlayBtn();
+        },
+        onPrepare: (done, total) => {
+          if (token !== enFullPlayToken) return;
+          enFullPhase = "prepare";
+          enFullLineNo = done;
+          enFullLineTotal = total;
+          renderEnFullPlayBtn();
+        },
+        onLine: (i, total) => {
+          if (token !== enFullPlayToken) return;
+          enFullPhase = "play";
+          enFullLineNo = i;
+          enFullLineTotal = total;
+          rememberFullLineVoice(i);
+          renderEnFullPlayBtn();
+        },
+        onStopped: () => {
+          if (token === enFullPlayToken) stopEnFullArticle();
+        },
+      });
+      if (queued) {
+        if (token !== enFullPlayToken || queued.cancelled) return;
+        await sleepMs(EN_FULL_LINE_PAUSE_MS);
+        continue;
+      }
+      for (let i = 0; i < lines.length; i += 1) {
         if (token !== enFullPlayToken) return;
-        enFullPhase = "prepare";
-        enFullLineNo = done;
-        enFullLineTotal = total;
-        renderEnFullPlayBtn();
-      },
-      onLine: (i, total) => {
+        await enFullSpeech.waitIfPaused?.();
         if (token !== enFullPlayToken) return;
         enFullPhase = "play";
-        enFullLineNo = i;
-        enFullLineTotal = total;
-        rememberFullLineVoice(i);
+        enFullLineNo = off + i + 1;
+        enFullLineTotal = all.length;
+        rememberFullLineVoice(enFullLineNo);
         renderEnFullPlayBtn();
-      },
-      onStopped: () => {
-        if (token === enFullPlayToken) stopEnFullArticle();
-      },
-    });
-    if (queued) {
-      if (token === enFullPlayToken && !queued.cancelled) {
-        toast(`全文朗读完成（${engine === "apple" ? "本机" : "联网"}）`);
+        await enFullSpeech.speakOnce(lines[i], {
+          voice: currentFullLineVoice() || undefined,
+          rotateSense: true,
+        });
+        if (token !== enFullPlayToken) return;
+        if (i < lines.length - 1) await sleepMs(EN_FULL_LINE_PAUSE_MS);
       }
-      return;
+      if (token !== enFullPlayToken) return;
+      await sleepMs(EN_FULL_LINE_PAUSE_MS);
     }
-    // 一行一断句：读完停顿再读下一行，避免连读上气不接下气
-    for (let i = 0; i < lines.length; i += 1) {
-      if (token !== enFullPlayToken) return;
-      await enFullSpeech.waitIfPaused?.(); // 暂停中就停在这一句前面
-      if (token !== enFullPlayToken) return;
-      enFullPhase = "play";
-      enFullLineNo = off + i + 1;
-      enFullLineTotal = all.length;
-      rememberFullLineVoice(enFullLineNo);
-      renderEnFullPlayBtn();
-      await enFullSpeech.speakOnce(lines[i], { voice: currentFullLineVoice() || undefined, rotateSense: true });
-      if (token !== enFullPlayToken) return;
-      if (i < lines.length - 1) {
-        await sleepMs(EN_FULL_LINE_PAUSE_MS);
-      }
-    }
-    if (token === enFullPlayToken) toast(`全文朗读完成（${engine === "apple" ? "本机" : "联网"}）`);
   } catch (err) {
     if (token === enFullPlayToken) toast(err?.message || "全文朗读失败");
   } finally {
@@ -1526,71 +1463,8 @@ async function playEnFullArticle(startAt = 1) {
   }
 }
 
-/** 「下载全文音频」：把全文每一行的联网朗读音频提前存到本机 */
-let enFullDownloading = false;
-let enFullDownloadText = "";
-
-function resetEnFullDownloadBtn() {
-  const btn = $("#btn-en-full-dl");
-  enFullDownloading = false;
-  enFullDownloadText = "";
-  if (!btn) return;
-  btn.classList.remove("is-downloading");
-  btn.textContent = "下载全文音频";
-  btn.title = "把全文的联网朗读音频提前存到本机，之后锁屏、离线也能连续播放";
-}
-
-function cancelEnFullDownload() {
-  if (!enFullDownloading) return;
-  enFullSpeech.cancelPrefetch?.();
-  resetEnFullDownloadBtn();
-}
-
-async function downloadEnFullAudio() {
-  const btn = $("#btn-en-full-dl");
-  if (!btn) return;
-  if (enFullDownloading) {
-    cancelEnFullDownload();
-    toast("已停止下载，已存好的音频会保留");
-    return;
-  }
-  const lines = englishFullSpeakLines();
-  if (!lines.length) {
-    toast("暂无英文");
-    return;
-  }
-  enFullDownloading = true;
-  enFullDownloadText = enFullRawText;
-  btn.classList.add("is-downloading");
-  btn.title = "点一下可停止下载";
-  btn.textContent = "下载 0%";
-  try {
-    const res = await enFullSpeech.prefetchLines(lines, {
-      voice: getFullVoice("online") || undefined,
-      onProgress: ({ done, total }) => {
-        if (!enFullDownloading) return;
-        btn.textContent = `下载 ${done}/${total}`;
-      },
-    });
-    if (res.cancelled) return; // 用户点了停止，或换题
-    resetEnFullDownloadBtn();
-    if (res.offline) {
-      toast("网络不可用，下载已中止；已存好的音频会保留");
-    } else if (res.failed) {
-      toast(`全文音频已存本机（${res.total - res.failed}/${res.total} 行，${res.failed} 行失败，可再点一次补全）`);
-    } else {
-      toast(`全文音频已全部存到本机（${res.total} 行）`);
-    }
-  } catch (err) {
-    console.warn(err);
-    resetEnFullDownloadBtn();
-    toast(err?.message || "下载全文音频失败");
-  }
-}
-
 function stopEnFullArticle() {
   enFullPlayToken += 1;
-  stopImportedFullAudio();
   enFullSpeech.stopPlayback?.();
   clearEnTapSpeaking();
   hideEnWordTip();
@@ -1608,28 +1482,23 @@ function fitEnFullBlockHeight() {
   const wrap = $("#passage-wrap");
   const transCollapsed = wrap?.classList.contains("is-collapsed");
   if (!transCollapsed) {
+    // 笔译展开时：全文用 CSS 默认 max-height，不硬塞满
     block.style.height = "";
     block.style.maxHeight = "";
     return;
   }
+  // 笔译收起：全文尽量占高；只预留「笔译」标题条 + 一小截滑动带
+  // （勿把 translation-swipe-zone 的 min-height 整段算进 reserved，否则全文会缩成一条）
+  const foldBtn = $("#btn-translation-fold");
+  const foldH = foldBtn ? Math.ceil(foldBtn.getBoundingClientRect().height) : 28;
+  const swipeReserve = Math.min(150, Math.max(96, Math.round(window.innerHeight * 0.16)));
+  const reserved = foldH + swipeReserve + 20;
   const top = block.getBoundingClientRect().top;
-  let reserved = 52;
-  if (wrap) {
-    const prevH = wrap.getBoundingClientRect().height;
-    if (prevH > 0) reserved = prevH;
-  }
   const safe = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--safe-bottom")) || 0;
-  const available = Math.floor(window.innerHeight - top - reserved - 18 - safe);
-  const h = Math.max(200, available);
+  const available = Math.floor(window.innerHeight - top - reserved - safe);
+  const h = Math.max(260, available);
   block.style.maxHeight = `${h}px`;
   block.style.height = `${h}px`;
-  if (!wrap) return;
-  const overflow = Math.ceil(wrap.getBoundingClientRect().bottom - (window.innerHeight - 10));
-  if (overflow > 0) {
-    const next = Math.max(200, h - overflow);
-    block.style.maxHeight = `${next}px`;
-    block.style.height = `${next}px`;
-  }
 }
 
 function bindEnFullUi() {
@@ -1662,8 +1531,6 @@ function fillEnFullBlock(q = currentQuestion()) {
   enFullRawText = String(en || "").trim();
   enFullLines = Array.isArray(lines) ? lines.slice() : englishFullSpeakLines(enFullRawText);
   enFullZhLines = (pairs || []).filter((p) => p.en).map((p) => p.zh || "");
-  // 换了题：停掉上一题的音频下载
-  if (enFullDownloading && enFullDownloadText !== enFullRawText) cancelEnFullDownload();
   if (!enFullRawText) {
     enFullLines = [];
     block.textContent = "（暂无英文）";
@@ -1752,24 +1619,342 @@ function toggleEnFullFold() {
   setEnFullCollapsed(!isEnFullCollapsed());
 }
 
+const BANK_PLAYLIST_PREF_KEY = "biyi_bank_playlist";
+let bankPlaylistToken = 0;
+let bankPlaylistActive = false;
+let bankPlaylistPaused = false;
+let bankPlaylistProgress = ""; // 如 "2/10"
+let bankPlaylistLastClick = 0;
+
+function englishLinesForQuestion(q) {
+  const built = buildEnglishFullText(q);
+  if (Array.isArray(built.lines) && built.lines.length) {
+    return built.lines.map((l) => String(l || "").trim()).filter(Boolean);
+  }
+  return String(q?.en || "")
+    .split(/\n+/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+}
+
+/** 列表播放用：英文行 + 一一对应的中文（锁屏双语）+ 可选重音片段 */
+function englishSpeakBundle(q) {
+  const built = buildEnglishFullText(q);
+  const pairs = (built.pairs || []).filter((p) => p.en);
+  const lines = pairs.length
+    ? pairs.map((p) => String(p.en || "").trim()).filter(Boolean)
+    : englishLinesForQuestion(q);
+  const subs = pairs.length
+    ? pairs.map((p) => String(p.zh || "").trim())
+    : lines.map(() => "");
+  // 打开题目后 fillEnFullBlock 已画好重音；数量对不上就不用
+  const richAll = enFullRichLines();
+  const rich = richAll.length === lines.length ? richAll : [];
+  return { lines, subs, rich };
+}
+
+/** 顶部「播放」、全文「朗读」、意群「朗读」互斥：一个亮着，其余压暗 */
+function syncPlayButtonsMutex() {
+  const listBtn = $("#btn-bank-playlist");
+  const fullBtn = $("#btn-en-full-play");
+  const senseBtn = $("#btn-sense-play");
+  const listOn = bankPlaylistActive;
+  const fullOn = !!fullBtn?.classList.contains("is-playing");
+  const senseOn = !!senseBtn?.classList.contains("is-playing");
+  listBtn?.classList.toggle("is-dimmed", !listOn && (fullOn || senseOn));
+  fullBtn?.classList.toggle("is-dimmed", !fullOn && (listOn || senseOn));
+  senseBtn?.classList.toggle("is-dimmed", !senseOn && (listOn || fullOn));
+}
+
+function paintBankPlaylistBtn() {
+  const btn = $("#btn-bank-playlist");
+  if (!btn) return;
+  if (bankPlaylistActive) {
+    const paused = bankPlaylistPaused || !!enFullSpeech.isPaused?.();
+    bankPlaylistPaused = paused;
+    btn.classList.add("is-playing");
+    btn.classList.toggle("is-paused", paused);
+    const prog = bankPlaylistProgress ? ` ${bankPlaylistProgress}` : "";
+    btn.textContent = paused ? `继续${prog}` : `暂停${prog}`;
+    btn.title = paused
+      ? "已暂停，点一下继续；快速双击结束列表播放"
+      : "列表播放中，点一下暂停；快速双击结束";
+  } else {
+    btn.classList.remove("is-playing", "is-paused");
+    btn.textContent = "播放";
+    btn.title = "在当前题型内按区间循环朗读（声音用「音色」设定）";
+  }
+  syncPlayButtonsMutex();
+}
+
+function pauseBankPlaylist() {
+  if (!bankPlaylistActive || bankPlaylistPaused) return;
+  bankPlaylistPaused = true;
+  enFullSpeech.pausePlayback?.();
+  paintBankPlaylistBtn();
+}
+
+function resumeBankPlaylist() {
+  if (!bankPlaylistActive || !bankPlaylistPaused) return;
+  bankPlaylistPaused = false;
+  enFullSpeech.resumePlayback?.();
+  paintBankPlaylistBtn();
+}
+
+async function sleepWhilePlaylistRunning(ms, token) {
+  const endAt = Date.now() + Math.max(0, Number(ms) || 0);
+  while (Date.now() < endAt) {
+    if (token !== bankPlaylistToken) return;
+    await enFullSpeech.waitIfPaused?.();
+    if (token !== bankPlaylistToken) return;
+    const left = endAt - Date.now();
+    if (left <= 0) break;
+    await sleepMs(Math.min(120, left));
+  }
+}
+
+function stopBankPlaylist({ toastMsg = "" } = {}) {
+  bankPlaylistToken += 1;
+  bankPlaylistActive = false;
+  bankPlaylistPaused = false;
+  bankPlaylistProgress = "";
+  bankPlaylistLastClick = 0;
+  try {
+    enFullSpeech.stopPlayback?.();
+  } catch (_) {}
+  paintBankPlaylistBtn();
+  if (toastMsg) toast(toastMsg);
+}
+
+function readBankPlaylistPrefs() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(BANK_PLAYLIST_PREF_KEY) || "{}");
+    return raw && typeof raw === "object" ? raw : {};
+  } catch (_) {
+    return {};
+  }
+}
+
+function writeBankPlaylistPrefs(prefs) {
+  try {
+    localStorage.setItem(BANK_PLAYLIST_PREF_KEY, JSON.stringify(prefs || {}));
+  } catch (_) {}
+}
+
+function openBankPlaylistDialog() {
+  const total = state.list?.length || 0;
+  if (!total) {
+    toast("当前题型没有题目");
+    return;
+  }
+  const page = $("#view-bank-playlist");
+  const fromEl = $("#bank-playlist-from");
+  const toEl = $("#bank-playlist-to");
+  const repEl = $("#bank-playlist-repeats");
+  const desc = $("#bank-playlist-desc");
+  if (!page || !fromEl || !toEl || !repEl) return;
+  const prefs = readBankPlaylistPrefs();
+  const cur = Math.min(Math.max((state.index || 0) + 1, 1), total);
+  let from = Math.floor(Number(prefs.from) || cur);
+  let to = Math.floor(Number(prefs.to) || Math.min(total, cur + 9));
+  let repeats = Math.floor(Number(prefs.repeats) || 1);
+  from = Math.min(Math.max(from, 1), total);
+  to = Math.min(Math.max(to, from), total);
+  repeats = Math.min(Math.max(repeats, 1), 20);
+  fromEl.min = "1";
+  fromEl.max = String(total);
+  toEl.min = "1";
+  toEl.max = String(total);
+  fromEl.value = String(from);
+  toEl.value = String(to);
+  repEl.value = String(repeats);
+  if (desc) {
+    desc.textContent = `当前：${bankTitle(state.bankCode)}，共 ${total} 题（按列表顺序 1–${total}）。声音用顶部「音色」设定`;
+  }
+  $("#view-practice")?.classList.add("hidden");
+  page.classList.remove("hidden");
+  window.scrollTo(0, 0);
+  setTimeout(() => {
+    fromEl.focus();
+    fromEl.select();
+  }, 40);
+}
+
+function closeBankPlaylistDialog() {
+  const page = $("#view-bank-playlist");
+  if (!page || page.classList.contains("hidden")) return;
+  page.classList.add("hidden");
+  $("#view-practice")?.classList.remove("hidden");
+  window.scrollTo(0, 0);
+}
+
+async function runBankPlaylist({ from, to, repeats }) {
+  const total = state.list?.length || 0;
+  if (!total) {
+    toast("当前题型没有题目");
+    return;
+  }
+  const start = Math.min(Math.max(Math.floor(from), 1), total);
+  const end = Math.min(Math.max(Math.floor(to), start), total);
+  const times = Math.min(Math.max(Math.floor(repeats), 1), 20);
+  writeBankPlaylistPrefs({ from: start, to: end, repeats: times });
+
+  enFullPlayToken += 1; // 打断全文朗读
+  resetEnFullPlayBtn();
+  const token = ++bankPlaylistToken;
+  bankPlaylistActive = true;
+  bankPlaylistPaused = false;
+  bankPlaylistProgress = `${start}/${end}`;
+  paintBankPlaylistBtn();
+  toast(`开始播放 ${start}–${end} 题，每题 ${times} 次`);
+
+  try {
+    await enFullSpeech.unlockAudio?.();
+    for (let i = start; i <= end; i += 1) {
+      if (token !== bankPlaylistToken) return;
+      bankPlaylistProgress = `${i}/${end}`;
+      paintBankPlaylistBtn();
+      await openQuestionAt(i - 1);
+      if (token !== bankPlaylistToken) return;
+      await enFullSpeech.waitIfPaused?.();
+      if (token !== bankPlaylistToken) return;
+      const q = currentQuestion();
+      const { lines, subs, rich } = englishSpeakBundle(q);
+      if (!lines.length) {
+        toast(`第 ${i} 题暂无英文，已跳过`);
+        continue;
+      }
+      for (let r = 1; r <= times; r += 1) {
+        if (token !== bankPlaylistToken) return;
+        await enFullSpeech.waitIfPaused?.();
+        if (token !== bankPlaylistToken) return;
+        if (times > 1) {
+          bankPlaylistProgress = `${i}/${end}·${r}/${times}`;
+          paintBankPlaylistBtn();
+        }
+        // 与全文朗读相同：读顶部「音色」里保存的引擎 + 声音；锁屏英中对照同「朗读」
+        const engine = getTtsEngine();
+        const voice = getFullVoice(engine) || undefined;
+        // 不传 onStopped：逐题正常播完不应整表停掉
+        const queued = await enFullSpeech.speakLines?.(lines, {
+          pauseMs: EN_FULL_LINE_PAUSE_MS,
+          title: `列表播放 #${i}`,
+          subs,
+          rich,
+          offset: 0,
+          grandTotal: lines.length,
+          voice,
+        });
+        if (token !== bankPlaylistToken) return;
+        if (queued) {
+          if (queued.cancelled) return;
+        } else {
+          for (let li = 0; li < lines.length; li += 1) {
+            if (token !== bankPlaylistToken) return;
+            await enFullSpeech.waitIfPaused?.();
+            if (token !== bankPlaylistToken) return;
+            const lineVoice = isRotateVoice(voice)
+              ? rotateVoiceAt(engine, li) || voice
+              : voice;
+            await enFullSpeech.speakOnce(lines[li], {
+              voice: lineVoice,
+              rotateSense: isRotateVoice(voice),
+            });
+            if (token !== bankPlaylistToken) return;
+            if (li < lines.length - 1) await sleepWhilePlaylistRunning(EN_FULL_LINE_PAUSE_MS, token);
+          }
+        }
+        if (token !== bankPlaylistToken) return;
+        if (r < times) await sleepWhilePlaylistRunning(320, token);
+      }
+      if (token !== bankPlaylistToken) return;
+      if (i < end) await sleepWhilePlaylistRunning(480, token);
+    }
+    if (token === bankPlaylistToken) {
+      stopBankPlaylist({ toastMsg: "列表播放完成" });
+    }
+  } catch (err) {
+    if (token !== bankPlaylistToken) return;
+    console.warn(err);
+    stopBankPlaylist({ toastMsg: err?.message || "列表播放失败" });
+  }
+}
+
+function confirmBankPlaylist() {
+  const total = state.list?.length || 0;
+  const from = Number($("#bank-playlist-from")?.value);
+  const to = Number($("#bank-playlist-to")?.value);
+  const repeats = Number($("#bank-playlist-repeats")?.value);
+  if (!total || !Number.isFinite(from) || !Number.isFinite(to) || from < 1 || to < from || to > total) {
+    toast(`请输入 1–${total} 的有效区间`);
+    return;
+  }
+  if (!Number.isFinite(repeats) || repeats < 1 || repeats > 20) {
+    toast("每题播放次数请填 1–20");
+    return;
+  }
+  closeBankPlaylistDialog();
+  runBankPlaylist({ from, to, repeats }).catch((err) => console.warn(err));
+}
+
 function bindFullTextUi() {
   bindEnWordTipDismiss();
   bindEnFullUi();
   $("#btn-en-full-fold")?.addEventListener("click", () => toggleEnFullFold());
   // 暂停 / 继续状态变化（含锁屏界面、耳机触发）→ 同步按钮文字
   document.addEventListener("biyi-speech-pause", () => {
-    if (!importedFullActive && enFullSpeech.isPaused?.()) {
+    if (enFullSpeech.isPaused?.()) {
       enFullPausedLine = Math.max(1, enFullLineNo || 1);
+    }
+    if (bankPlaylistActive) {
+      bankPlaylistPaused = !!enFullSpeech.isPaused?.();
+      paintBankPlaylistBtn();
     }
     renderEnFullPlayBtn();
   });
   $("#btn-voice-pick")?.addEventListener("click", () => {
     openReadVoiceDialog().catch((err) => console.warn(err));
   });
+  $("#btn-bank-playlist")?.addEventListener("click", () => {
+    if (bankPlaylistActive) {
+      const now = Date.now();
+      // 快速双击：结束列表播放
+      if (now - bankPlaylistLastClick < 380) {
+        bankPlaylistLastClick = 0;
+        stopBankPlaylist({ toastMsg: "已结束列表播放" });
+        return;
+      }
+      bankPlaylistLastClick = now;
+      // 单击：暂停 / 继续
+      if (bankPlaylistPaused || enFullSpeech.isPaused?.()) resumeBankPlaylist();
+      else pauseBankPlaylist();
+      return;
+    }
+    openBankPlaylistDialog();
+  });
+  $("#btn-bank-playlist-cancel")?.addEventListener("click", () => closeBankPlaylistDialog());
+  $("#btn-bank-playlist-confirm")?.addEventListener("click", () => confirmBankPlaylist());
+  for (const id of ["bank-playlist-from", "bank-playlist-to", "bank-playlist-repeats"]) {
+    $(`#${id}`)?.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        confirmBankPlaylist();
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        closeBankPlaylistDialog();
+      }
+    });
+  }
   $("#btn-read-voice-cancel")?.addEventListener("click", () => closeReadVoiceDialog());
   $("#btn-read-voice-confirm")?.addEventListener("click", () => confirmReadVoice());
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape") return;
+    const playlistPage = $("#view-bank-playlist");
+    if (playlistPage && !playlistPage.classList.contains("hidden")) {
+      e.preventDefault();
+      closeBankPlaylistDialog();
+      return;
+    }
     const page = $("#view-read-voice");
     if (!page || page.classList.contains("hidden")) return;
     e.preventDefault();
@@ -1796,57 +1981,6 @@ function bindFullTextUi() {
       setLockStressOn(lockStressEl.value !== "0");
     });
   }
-  $("#btn-en-full-dl")?.addEventListener("click", () => {
-    downloadEnFullAudio().catch((err) => console.warn(err));
-  });
-  $("#btn-en-full-import")?.addEventListener("click", () => {
-    const key = passageMarkKey(currentQuestion());
-    if (!key || !enFullRawText) {
-      toast("请先选题");
-      return;
-    }
-    if (hasFullArticleAudio(key)) {
-      deleteFullArticleAudio(key)
-        .then(() => {
-          paintEnFullImportBtn();
-          toast("已清除导入音频，全文朗读改回系统朗读");
-        })
-        .catch((err) => {
-          console.warn(err);
-          toast("清除失败");
-        });
-      return;
-    }
-    $("#en-full-audio-file")?.click();
-  });
-  $("#en-full-audio-file")?.addEventListener("change", (e) => {
-    const file = e.target?.files?.[0];
-    e.target.value = "";
-    if (!file) return;
-    const key = passageMarkKey(currentQuestion());
-    if (!key) {
-      toast("请先选题");
-      return;
-    }
-    const btn = $("#btn-en-full-import");
-    if (btn) {
-      btn.disabled = true;
-      btn.textContent = "导入中…";
-    }
-    saveFullArticleAudio(key, file)
-      .then((meta) => {
-        paintEnFullImportBtn();
-        toast(`已导入「${meta.fileName || "音频"}」，点全文朗读即可播放`);
-      })
-      .catch((err) => {
-        console.warn(err);
-        paintEnFullImportBtn();
-        toast(err?.message || "导入失败");
-      })
-      .finally(() => {
-        if (btn) btn.disabled = false;
-      });
-  });
   $("#btn-en-full-play")?.addEventListener("click", () => {
     const playBtn = $("#btn-en-full-play");
     const now = Date.now();
@@ -1859,24 +1993,6 @@ function bindFullTextUi() {
       }
       enFullLastClick = now;
       // 单击：暂停 / 继续（若拖动改过进度，从新句重开）
-      if (importedFullActive) {
-        enFullPrePaused = isImportedFullPaused();
-        if (enFullPrePaused) {
-          const start = Math.max(1, enFullLineNo || 1);
-          if (enFullPausedLine && start !== enFullPausedLine) {
-            enFullPausedLine = 0;
-            playEnFullArticle(start).catch((err) => console.warn(err));
-          } else {
-            importedFullCtrl?.resume?.();
-            renderEnFullPlayBtn();
-          }
-        } else {
-          enFullPausedLine = Math.max(1, enFullLineNo || 1);
-          importedFullCtrl?.pause?.();
-          renderEnFullPlayBtn();
-        }
-        return;
-      }
       enFullPrePaused = !!enFullSpeech.isPaused?.();
       if (enFullPrePaused) {
         const start = Math.max(1, enFullLineNo || 1);
@@ -1990,6 +2106,7 @@ async function openBank(code, preferNum = null) {
     }
     return;
   }
+  if (bankPlaylistActive) stopBankPlaylist();
   translationApi?.persistCurrentTranslation();
   state.bankCode = c;
   localStorage.setItem("biyi_last_bank", c);
@@ -2050,6 +2167,65 @@ function move(delta) {
     toast(err.message || "切题失败");
   });
   return true;
+}
+
+/** 左右滑切题：笔译收起后的空白区 + 底部滑动条（无上一题/下一题按钮） */
+function bindPracticeBlankSwipe() {
+  const zones = [$("#translation-swipe-zone"), $("#practice-q-swipe")].filter(Boolean);
+  if (!zones.length) return;
+
+  const MIN_DX = 56;
+  const MAX_DY_RATIO = 0.65;
+
+  for (const zone of zones) {
+    if (zone._biyiSwipeBound) continue;
+    zone._biyiSwipeBound = true;
+    let startX = 0;
+    let startY = 0;
+    let tracking = false;
+    let pointerId = null;
+
+    const onDown = (e) => {
+      if (e.pointerType === "mouse" && e.button !== 0) return;
+      if ($("#view-practice")?.classList.contains("hidden")) return;
+      // 顶部空白区仅在笔译收起后可滑；底部条始终可滑
+      if (zone.id === "translation-swipe-zone") {
+        const wrap = $("#passage-wrap");
+        if (!wrap?.classList.contains("is-collapsed")) return;
+      }
+      tracking = true;
+      pointerId = e.pointerId;
+      startX = e.clientX;
+      startY = e.clientY;
+      try {
+        zone.setPointerCapture?.(e.pointerId);
+      } catch (_) {}
+    };
+
+    const onUp = (e) => {
+      if (!tracking) return;
+      if (pointerId != null && e.pointerId !== pointerId) return;
+      tracking = false;
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+      pointerId = null;
+      try {
+        zone.releasePointerCapture?.(e.pointerId);
+      } catch (_) {}
+      const ok = Math.abs(dx) >= MIN_DX && Math.abs(dy) <= Math.abs(dx) * MAX_DY_RATIO;
+      if (ok) move(dx < 0 ? 1 : -1);
+    };
+
+    const onCancel = (e) => {
+      if (pointerId != null && e.pointerId !== pointerId) return;
+      tracking = false;
+      pointerId = null;
+    };
+
+    zone.addEventListener("pointerdown", onDown, { passive: true });
+    zone.addEventListener("pointerup", onUp, { passive: true });
+    zone.addEventListener("pointercancel", onCancel, { passive: true });
+  }
 }
 
 async function ensureFriendsEpisodes() {
@@ -2855,10 +3031,16 @@ async function importTextFromDialog(file) {
     const enText = groups.map((g) => g.english).filter(Boolean).join("\n");
     const zhText = groups.map((g) => g.chinese).filter(Boolean).join("\n");
     if (bodyEl) bodyEl.value = enText;
-    // 重新导入：标题也按新文件重置
-    if (nameEl) {
-      nameEl.value =
-        titleFromSrtFileName(file.name) || firstLineTitle(enText) || firstLineTitle(zhText) || "";
+    // 重新导入：标题也按新文件重置；同名旧稿写入同一编辑位，避免再生成错位副本
+    const importTitle =
+      titleFromSrtFileName(file.name) || firstLineTitle(enText) || firstLineTitle(zhText) || "";
+    if (nameEl) nameEl.value = importTitle;
+    const editNumEl = $("#custom-text-edit-num");
+    if (importTitle) {
+      const same = loadCustomTexts().find(
+        (x) => String(x?.name || "").trim() === importTitle
+      );
+      if (same && editNumEl) editNumEl.value = String(same.num);
     }
     renderSensePairEditor(pendingSrtGroups);
     const modeHint =
@@ -3034,12 +3216,108 @@ function bindJumpUi() {
   window.addEventListener("resize", syncJumpDialogKeyboard);
 }
 
+function placeFixedMenu(btn, menu, { gap = 4, margin = 12 } = {}) {
+  if (!btn || !menu) return;
+  menu.style.maxHeight = "none";
+  menu.hidden = false;
+  const rect = btn.getBoundingClientRect();
+  const top = rect.bottom + gap;
+  const avail = window.innerHeight - top - margin;
+  if (menu.offsetHeight > avail) menu.style.maxHeight = `${Math.max(140, Math.floor(avail))}px`;
+  const menuWidth = menu.offsetWidth;
+  let left = rect.left;
+  if (left + menuWidth > window.innerWidth - margin) {
+    left = Math.max(margin, window.innerWidth - margin - menuWidth);
+  }
+  menu.style.left = `${Math.round(left)}px`;
+  menu.style.top = `${Math.round(top)}px`;
+}
+
+function closeTopbarMenus({ keepMore = false, keepText = false } = {}) {
+  const moreBtn = $("#btn-topbar-more");
+  const morePanel = $("#topbar-more-panel");
+  const textBtn = $("#btn-topbar-text");
+  const textMenu = $("#topbar-text-menu");
+  if (!keepMore && morePanel?.classList.contains("is-open")) {
+    morePanel.classList.remove("is-open");
+    morePanel.style.left = "";
+    morePanel.style.top = "";
+    morePanel.style.maxHeight = "";
+    moreBtn?.setAttribute("aria-expanded", "false");
+  }
+  if (!keepText && textMenu && !textMenu.hidden) {
+    textMenu.hidden = true;
+    textBtn?.setAttribute("aria-expanded", "false");
+  }
+}
+
+function bindTopbarMenus() {
+  const moreBtn = $("#btn-topbar-more");
+  const morePanel = $("#topbar-more-panel");
+  const textBtn = $("#btn-topbar-text");
+  const textMenu = $("#topbar-text-menu");
+  moreBtn?.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!morePanel) return;
+    const mobile = window.matchMedia("(max-width: 800px)").matches;
+    if (!mobile) return;
+    const willOpen = !morePanel.classList.contains("is-open");
+    closeTopbarMenus();
+    if (!willOpen) return;
+    morePanel.classList.add("is-open");
+    placeFixedMenu(moreBtn, morePanel);
+    moreBtn.setAttribute("aria-expanded", "true");
+  });
+  textBtn?.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!textMenu) return;
+    const willOpen = textMenu.hidden;
+    closeTopbarMenus({ keepMore: true });
+    if (!willOpen) return;
+    placeFixedMenu(textBtn, textMenu);
+    textBtn.setAttribute("aria-expanded", "true");
+  });
+  $("#btn-wordbook")?.addEventListener("click", () => closeTopbarMenus());
+  document.addEventListener("click", (e) => {
+    const t = e.target;
+    if (
+      t?.closest?.("#topbar-more") ||
+      t?.closest?.("#topbar-text-pick") ||
+      t?.closest?.(".font-pick") ||
+      t?.closest?.(".font-pick-menu")
+    ) {
+      return;
+    }
+    closeTopbarMenus();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeTopbarMenus();
+  });
+  window.addEventListener("resize", () => closeTopbarMenus());
+  // 字体菜单定位时可能滚动，勿顺带关掉「更多」
+  window.addEventListener(
+    "scroll",
+    () => {
+      if ([...document.querySelectorAll(".font-pick-menu")].some((el) => !el.hidden)) return;
+      closeTopbarMenus();
+    },
+    true
+  );
+}
+
 function bindCustomTextUi() {
-  $("#btn-custom-text-add")?.addEventListener("click", () => openCustomTextDialog({ manage: true }));
+  bindTopbarMenus();
+  $("#btn-custom-text-add")?.addEventListener("click", () => {
+    closeTopbarMenus();
+    openCustomTextDialog({ manage: true });
+  });
   $("#btn-custom-text-back")?.addEventListener("click", () => {
     closeCustomTextDialog().catch((err) => console.warn(err));
   });
   $("#btn-custom-text-edit")?.addEventListener("click", () => {
+    closeTopbarMenus();
     const q = currentQuestion();
     if (!q) {
       toast("请先选择题");
@@ -3143,7 +3421,6 @@ async function boot() {
     passageMarkKey,
     currentQuestion,
     ensureSenseGroupsVisible,
-    ensureSensePageForSenseIdx,
     clampDictationTyped,
     autoAppendDictationExtras,
     isDictationAutoWord,
@@ -3162,8 +3439,7 @@ async function boot() {
   $("#passage-wrap")?.classList.add("translation-on");
   $("#translation-panel")?.classList.remove("hidden");
 
-  $("#btn-prev")?.addEventListener("click", () => move(-1));
-  $("#btn-next")?.addEventListener("click", () => move(1));
+  bindPracticeBlankSwipe();
   $("#bank-select")?.addEventListener("change", (e) => {
     fitBankSelectWidth();
     openBank(e.target.value).catch((err) => {

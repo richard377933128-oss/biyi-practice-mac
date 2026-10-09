@@ -1,9 +1,9 @@
 
-import { bindEnglishInputOnFocus } from "./ime-english.js?v=20260928n";
-import { createEdgeSpeech } from "./edge-tts.js?v=20261005n";
-import { annotateEnTapStress } from "./en-word-dict.js?v=20261005stress";
+import { bindEnglishInputOnFocus } from "./ime-english.js?v=20261009lib";
+import { createEdgeSpeech } from "./edge-tts.js?v=20261009lib";
+import { annotateEnTapStress } from "./en-word-dict.js?v=20261009lib";
 
-export function createTranslation({ state, $, toast, saveTranslationMemory, renderQuestion, syncDictationUI, setDictationOn, setPassageFocusOn, persistCurrentDictation, passageMarkKey, currentQuestion, ensureSenseGroupsVisible, ensureSensePageForSenseIdx, clampDictationTyped, autoAppendDictationExtras, isDictationAutoWord, normalizeDictationText, sameDictationChar, dictationCharLabel, dictationErrorHint, moveQuestion }) {
+export function createTranslation({ state, $, toast, saveTranslationMemory, renderQuestion, syncDictationUI, setDictationOn, setPassageFocusOn, persistCurrentDictation, passageMarkKey, currentQuestion, ensureSenseGroupsVisible, clampDictationTyped, autoAppendDictationExtras, isDictationAutoWord, normalizeDictationText, sameDictationChar, dictationCharLabel, dictationErrorHint, moveQuestion }) {
   const speech = createEdgeSpeech();
   let groupWords = [];
   let answerGhostTarget = "";
@@ -238,7 +238,10 @@ export function createTranslation({ state, $, toast, saveTranslationMemory, rend
     const toggle = $("#toggle-answer");
     const wrap = $("#translation-answer-wrap");
     const ghost = $("#translation-answer-ghost");
-    if (toggle) toggle.checked = on;
+    if (toggle) {
+      toggle.classList.toggle("is-on", on);
+      toggle.setAttribute("aria-pressed", on ? "true" : "false");
+    }
     if (wrap) wrap.classList.toggle("is-answer-on", on);
     if (!ghost) return;
     syncStressMarkShift(ghost);
@@ -257,9 +260,6 @@ export function createTranslation({ state, $, toast, saveTranslationMemory, rend
     }
     wrap?.classList.add("is-ghost-en");
     const senseIdx = currentTranslationSenseIdx();
-    if (typeof ensureSensePageForSenseIdx === "function" && senseIdx >= 0) {
-      ensureSensePageForSenseIdx(senseIdx);
-    }
     const rebuilt = answerGhostTarget !== target;
     if (rebuilt) {
       answerGhostTarget = target;
@@ -310,9 +310,8 @@ export function createTranslation({ state, $, toast, saveTranslationMemory, rend
     const toggle = $("#toggle-answer");
     if (!toggle || toggle.dataset.bound === "1") return;
     toggle.dataset.bound = "1";
-    toggle.checked = isAnswerOn();
-    toggle.addEventListener("change", () => {
-      setAnswerOn(!!toggle.checked);
+    toggle.addEventListener("click", () => {
+      setAnswerOn(!isAnswerOn());
     });
     bindAnswerStressFromChip();
     syncAnswerUi();
@@ -322,10 +321,13 @@ export function createTranslation({ state, $, toast, saveTranslationMemory, rend
     return readPref(TTS_PREF_KEY, true);
   }
 
-  /** 笔译「朗读」开关：只管开 / 关。声音种类统一在「全文朗读」的声音列表里选 */
+  /** 笔译「朗读」开关：只管开 / 关。声音种类统一在顶部「音色」里选 */
   function syncPrefToggles() {
     const toggle = $("#toggle-tts");
-    if (toggle) toggle.checked = isTtsEnabled();
+    if (!toggle) return;
+    const on = isTtsEnabled();
+    toggle.classList.toggle("is-on", on);
+    toggle.setAttribute("aria-pressed", on ? "true" : "false");
   }
 
   function reprepareCurrentSpeech() {
@@ -353,8 +355,8 @@ export function createTranslation({ state, $, toast, saveTranslationMemory, rend
     const toggle = $("#toggle-tts");
     if (!toggle || toggle.dataset.bound === "1") return;
     toggle.dataset.bound = "1";
-    toggle.checked = isTtsEnabled();
-    toggle.addEventListener("change", () => setTtsEnabled(!!toggle.checked));
+    syncPrefToggles();
+    toggle.addEventListener("click", () => setTtsEnabled(!isTtsEnabled()));
     // 在「全文朗读」里换了声音 / 引擎：笔译要按新声音重新备音
     document.addEventListener("biyi-tts-engine", () => {
       if (isTtsEnabled()) reprepareCurrentSpeech();
