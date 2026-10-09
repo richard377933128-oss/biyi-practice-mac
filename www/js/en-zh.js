@@ -15,4 +15,4 @@ export {
   probeLocalModelReady,
   bindTranslateEngineUi,
   syncTranslateEngineUi,
-} from "./translate-engine.js?v=20261009perf";
+} from "./translate-engine.js?v=20261009hotfix";

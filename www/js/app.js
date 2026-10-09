@@ -1,10 +1,10 @@
-import "./error-trap.js?v=20261009perf"; // 全局错误兜底，必须第一个 import
-import { initKvStore } from "./lib/kv-store.js?v=20261009perf";
-import { bindVoiceMemo } from "./voice-memo.js?v=20261009perf";
-import { createTranslation } from "./translation.js?v=20261009perf";
+import "./error-trap.js?v=20261009hotfix"; // 全局错误兜底，必须第一个 import
+import { initKvStore } from "./lib/kv-store.js?v=20261009hotfix";
+import { bindVoiceMemo } from "./voice-memo.js?v=20261009hotfix";
+import { createTranslation } from "./translation.js?v=20261009hotfix";
 // screen-record.js / system-camera.js 合计约 3700 行，启动时动态加载（见 boot() 末尾）
-import { createEdgeSpeech, getTtsEngine, setTtsEngine, getSavedVoice, setSavedVoice, ROTATE_VOICE, isRotateVoice, rotateVoiceAt, peekRotateVoice } from "./edge-tts.js?v=20261009perf";
-import { isLockStressOn, setLockStressOn } from "./lock-screen.js?v=20261009perf";
+import { createEdgeSpeech, getTtsEngine, setTtsEngine, getSavedVoice, setSavedVoice, ROTATE_VOICE, isRotateVoice, rotateVoiceAt, peekRotateVoice } from "./edge-tts.js?v=20261009hotfix";
+import { isLockStressOn, setLockStressOn } from "./lock-screen.js?v=20261009hotfix";
 import {
   CUSTOM_BANK_CODE,
   CUSTOM_ADD_CODE,
@@ -22,13 +22,13 @@ import {
   parseImportText,
   readSrtFile,
   titleFromSrtFileName,
-} from "./custom-texts.js?v=20261009perf";
+} from "./custom-texts.js?v=20261009hotfix";
 import {
   translateZhToEn,
   bindTranslateEngineUi,
   loadTranslatePrefs,
   polishAndTranslateZhLinesViaDeepSeek,
-} from "./en-zh.js?v=20261009perf";
+} from "./en-zh.js?v=20261009hotfix";
 import {
   lookupEnWord,
   showEnWordTip,
@@ -40,8 +40,8 @@ import {
   applyStressToWordEl,
   markStressOnWord,
   formatPhonetic,
-} from "./en-word-dict.js?v=20261009perf";
-import { addWord, hasWord, bindWordbook } from "./wordbook.js?v=20261009perf";
+} from "./en-word-dict.js?v=20261009hotfix";
+import { addWord, hasWord, bindWordbook } from "./wordbook.js?v=20261009hotfix";
 import {
   clampDictationTyped,
   autoAppendDictationExtras,
@@ -3443,8 +3443,8 @@ async function boot() {
   const idle = window.requestIdleCallback || ((fn) => setTimeout(fn, 300));
   idle(() => {
     Promise.all([
-      import("./screen-record.js?v=20261009perf"),
-      import("./system-camera.js?v=20261009perf"),
+      import("./screen-record.js?v=20261009hotfix"),
+      import("./system-camera.js?v=20261009hotfix"),
     ])
       .then(([sr, sc]) => {
         sr.createScreenRecord({ $, toast });

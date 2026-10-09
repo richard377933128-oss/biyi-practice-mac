@@ -60,3 +60,19 @@ test("?v= 引用的文件真实存在", () => {
   }
   assert.ok(checked >= 10, `只检查到 ${checked} 处引用，正则可能失效`);
 });
+
+test("引用 kv-store API 的模块必须显式 import（2026-10-09 丢 import 事故回归）", () => {
+  const KV_API = ["kvGet", "kvSet", "kvRemove", "initKvStore"];
+  for (const file of walk(join(WWW, "js"))) {
+    if (file.endsWith(join("lib", "kv-store.js"))) continue;
+    const src = readFileSync(file, "utf8");
+    for (const api of KV_API) {
+      const used = new RegExp(`\\b${api}\\s*\\(`).test(src);
+      if (!used) continue;
+      const imported = new RegExp(
+        `import\\s*\\{[^}]*\\b${api}\\b[^}]*\\}\\s*from\\s*["'][^"']*kv-store\\.js`
+      ).test(src);
+      assert.ok(imported, `${relative(ROOT, file)} 使用了 ${api}() 但没有从 kv-store.js 导入`);
+    }
+  }
+});
