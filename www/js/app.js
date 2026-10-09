@@ -1,10 +1,9 @@
-import "./error-trap.js?v=20261009vmclick"; // 全局错误兜底，必须第一个 import
-import { initKvStore } from "./lib/kv-store.js?v=20261009vmclick";
-import { bindVoiceMemo } from "./voice-memo.js?v=20261009vmclick";
-import { createTranslation } from "./translation.js?v=20261009vmclick";
+import "./error-trap.js?v=20261009novm"; // 全局错误兜底，必须第一个 import
+import { initKvStore } from "./lib/kv-store.js?v=20261009novm";
+import { createTranslation } from "./translation.js?v=20261009novm";
 // screen-record.js / system-camera.js 合计约 3700 行，启动时动态加载（见 boot() 末尾）
-import { createEdgeSpeech, getTtsEngine, setTtsEngine, getSavedVoice, setSavedVoice, ROTATE_VOICE, isRotateVoice, rotateVoiceAt, peekRotateVoice } from "./edge-tts.js?v=20261009vmclick";
-import { isLockStressOn, setLockStressOn } from "./lock-screen.js?v=20261009vmclick";
+import { createEdgeSpeech, getTtsEngine, setTtsEngine, getSavedVoice, setSavedVoice, ROTATE_VOICE, isRotateVoice, rotateVoiceAt, peekRotateVoice } from "./edge-tts.js?v=20261009novm";
+import { isLockStressOn, setLockStressOn } from "./lock-screen.js?v=20261009novm";
 import {
   CUSTOM_BANK_CODE,
   CUSTOM_ADD_CODE,
@@ -22,13 +21,13 @@ import {
   parseImportText,
   readSrtFile,
   titleFromSrtFileName,
-} from "./custom-texts.js?v=20261009vmclick";
+} from "./custom-texts.js?v=20261009novm";
 import {
   translateZhToEn,
   bindTranslateEngineUi,
   loadTranslatePrefs,
   polishAndTranslateZhLinesViaDeepSeek,
-} from "./en-zh.js?v=20261009vmclick";
+} from "./en-zh.js?v=20261009novm";
 import {
   lookupEnWord,
   showEnWordTip,
@@ -40,8 +39,8 @@ import {
   applyStressToWordEl,
   markStressOnWord,
   formatPhonetic,
-} from "./en-word-dict.js?v=20261009vmclick";
-import { addWord, hasWord, bindWordbook } from "./wordbook.js?v=20261009vmclick";
+} from "./en-word-dict.js?v=20261009novm";
+import { addWord, hasWord, bindWordbook } from "./wordbook.js?v=20261009novm";
 import {
   clampDictationTyped,
   autoAppendDictationExtras,
@@ -3443,8 +3442,8 @@ async function boot() {
   const idle = window.requestIdleCallback || ((fn) => setTimeout(fn, 300));
   idle(() => {
     Promise.all([
-      import("./screen-record.js?v=20261009vmclick"),
-      import("./system-camera.js?v=20261009vmclick"),
+      import("./screen-record.js?v=20261009novm"),
+      import("./system-camera.js?v=20261009novm"),
     ])
       .then(([sr, sc]) => {
         sr.createScreenRecord({ $, toast });
@@ -3489,7 +3488,6 @@ async function boot() {
     }
   }
   bindCustomTextUi();
-  bindVoiceMemo({ $, toast });
   bindTranslateEngineUi();
   bindJumpUi();
   bindFullTextUi();

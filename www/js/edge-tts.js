@@ -1,7 +1,7 @@
 /** Edge 联网朗读 + 苹果本机 speechSynthesis。合成结果（联网）写入本机缓存。 */
 
-import { archiveSpeechClip, loadSpeechBlob } from "./tts-cache.js?v=20261009vmclick";
-import { ensureLockFonts, isLockStressOn, lockFontSpec, renderLockArtwork, splitForLockScreen } from "./lock-screen.js?v=20261009vmclick";
+import { archiveSpeechClip, loadSpeechBlob } from "./tts-cache.js?v=20261009novm";
+import { ensureLockFonts, isLockStressOn, lockFontSpec, renderLockArtwork, splitForLockScreen } from "./lock-screen.js?v=20261009novm";
 
 const TRUSTED_CLIENT_TOKEN = "6A5AA1D4EAFF4E9FB37E23D68491D6F4";
 const GEC_VERSION = "1-143.0.3650.75";
