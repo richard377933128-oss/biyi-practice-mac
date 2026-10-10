@@ -26,6 +26,15 @@
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>
 	<string>Main</string>
+	<key>UIAppFonts</key>
+	<array>
+		<string>public/fonts/FZXingKaiJian.ttf</string>
+		<string>public/fonts/ZiYuFangNiDeMingZi.ttf</string>
+		<string>public/fonts/KaitiSC.ttf</string>
+		<string>public/fonts/SongtiSC.ttf</string>
+		<string>public/fonts/HeitiSC.ttf</string>
+		<string>public/fonts/YuantiSC.ttf</string>
+	</array>
 	<key>UIRequiredDeviceCapabilities</key>
 	<array>
 		<string>armv7</string>

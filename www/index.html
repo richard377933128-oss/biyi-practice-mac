@@ -34,8 +34,37 @@
       font-style: normal;
       font-display: swap;
     }
+    /* iOS 系统不带楷体/宋体/黑体/圆体（只有苹方），随包自带，保证 iPhone 上切换有效 */
+    @font-face {
+      font-family: "Kaiti SC";
+      src: url("./fonts/KaitiSC.ttf") format("truetype");
+      font-weight: 400 700;
+      font-style: normal;
+      font-display: swap;
+    }
+    @font-face {
+      font-family: "Songti SC";
+      src: url("./fonts/SongtiSC.ttf") format("truetype");
+      font-weight: 400 700;
+      font-style: normal;
+      font-display: swap;
+    }
+    @font-face {
+      font-family: "Heiti SC";
+      src: url("./fonts/HeitiSC.ttf") format("truetype");
+      font-weight: 400 700;
+      font-style: normal;
+      font-display: swap;
+    }
+    @font-face {
+      font-family: "Yuanti SC";
+      src: url("./fonts/YuantiSC.ttf") format("truetype");
+      font-weight: 400 700;
+      font-style: normal;
+      font-display: swap;
+    }
   </style>
-  <link rel="stylesheet" href="./css/app.css?v=20261009novm" />
+  <link rel="stylesheet" href="./css/app.css?v=20261010font12" />
 </head>
 <body>
   <main id="view-practice" class="view translation-on">
@@ -681,6 +710,6 @@
   </div>
 
   <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
-  <script type="module" src="./js/app.js?v=20261009novm"></script>
+  <script type="module" src="./js/app.js?v=20261010no-voice1"></script>
 </body>
 </html>

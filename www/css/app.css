@@ -2437,3 +2437,33 @@ button { -webkit-tap-highlight-color: transparent; }
   font-size: 0.88rem;
   font-weight: 600;
 }
+
+/* ---------- 意群内的「完整意群 ⇄ 动宾短语」切换按钮 ----------
+   按钮紧跟在中文最后一个字后面（不用 flex 顶到行尾，那样点起来太远）。
+   中文换行时按钮自动落到末行末尾，跟随文字走。 */
+.sense-vo-btn {
+  appearance: none;
+  display: inline-block;
+  margin: 0 0 0 0.4rem;
+  padding: 0 0.2rem;
+  border: 0;
+  background: transparent;
+  color: var(--ink-soft);
+  /* 父级是中文书法字体栈，显式换栈保证 ⇄ 字形一定能渲染 */
+  font-family: var(--font-body);
+  font-size: 0.82rem;
+  line-height: 1;
+  vertical-align: baseline;
+  cursor: pointer;
+  opacity: 0.4;
+  transition: opacity 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.sense-vo-btn:hover,
+.sense-vo-btn:focus-visible {
+  opacity: 1;
+}
+.sense-vo-btn[aria-expanded="true"] {
+  opacity: 0.85;
+  color: var(--accent-2, #0f766e);
+}

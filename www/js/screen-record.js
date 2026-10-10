@@ -117,14 +117,17 @@ const LEAD_FONT_PRESETS = {
   kaiti: {
     label: "楷体",
     stack: `"Kaiti SC", "STKaiti", "KaiTi", "华文楷体", serif`,
+    loadFamily: "Kaiti SC",
   },
   songti: {
     label: "宋体",
     stack: `"Songti SC", "STSong", "SimSun", "宋体", serif`,
+    loadFamily: "Songti SC",
   },
   heiti: {
     label: "黑体",
     stack: `"Heiti SC", "STHeiti", "SimHei", "Microsoft YaHei", sans-serif`,
+    loadFamily: "Heiti SC",
   },
   pingfang: {
     label: "苹方",
@@ -133,6 +136,7 @@ const LEAD_FONT_PRESETS = {
   yuanti: {
     label: "圆体",
     stack: `"Yuanti SC", "STYuanti", "YouYuan", sans-serif`,
+    loadFamily: "Yuanti SC",
   },
 };
 
@@ -893,7 +897,8 @@ export function createScreenRecord({ $ = (sel) => document.querySelector(sel), t
     root.dataset.practiceLeadFont = state.leadFont;
     // iOS WKWebView：button 经常不继承父级 font-family/CSS 变量，直接写到节点
     const enNodes = document.querySelectorAll(
-      "#sense-block .sense-en, #sense-block .sense-en .en-tap-word, #sense-block .sense-en .en-tap-sep, #en-full-block, #en-full-block .en-tap-word, #en-full-block .en-tap-sep"
+      "#sense-block .sense-en, #sense-block .sense-en .en-tap-word, #sense-block .sense-en .en-tap-sep, " +
+        "#en-full-block, #en-full-block .en-tap-word, #en-full-block .en-tap-sep"
     );
     enNodes.forEach((el) => {
       el.style.fontFamily = en.stack;

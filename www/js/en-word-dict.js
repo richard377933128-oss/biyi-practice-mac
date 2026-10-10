@@ -25,14 +25,16 @@ function isNativeApp() {
   return !!(Cap?.isNativePlatform && Cap.isNativePlatform());
 }
 
-async function fetchText(url) {
-  const res = await fetch(url, { method: "GET", cache: "force-cache" });
+async function fetchText(url, opts) {
+  const res = await fetch(url, Object.assign({ method: "GET", cache: "force-cache" }, opts));
   if (!res.ok) throw new Error(`dict http ${res.status}`);
   return res;
 }
 
 async function fetchJsonGz(url) {
-  const res = await fetchText(url);
+  // Chromium 会把「嗅探为下载」的 .gz 响应拦成 204 空响应，导致离线词典整片失效。
+  // 带上 Range 头后按分段请求处理即可正常返回（服务器不支持时退回整段 200）。
+  const res = await fetchText(url, { headers: { Range: "bytes=0-" } });
   if (typeof DecompressionStream === "undefined") {
     throw new Error("gzip unsupported");
   }
@@ -321,13 +323,90 @@ export async function warmEnDict() {
   await Promise.all([loadIndex().catch(() => null), loadForms().catch(() => null)]);
 }
 
+/** 词典释义里的词性前缀（如 "vt." / "n." / "a."）到统一词性名的映射 */
+const POS_ALIAS = {
+  n: "noun", na: "noun", un: "noun", pl: "noun",
+  a: "adj", adj: "adj",
+  v: "verb", vt: "verb", vi: "verb", vbl: "verb",
+  adv: "adv", ad: "adv",
+  pron: "pron", prep: "prep", conj: "conj", num: "num",
+  art: "art", aux: "aux", auxv: "aux", int: "interj", interj: "interj",
+};
+
+/**
+ * 从离线词典释义（形如 "vt. 完成, 达到；vi. 如愿以偿"）里解析词性集合
+ * @param {string} gloss
+ * @returns {Set<string>} 如 new Set(["verb"])
+ */
+export function parsePosTags(gloss) {
+  const out = new Set();
+  const g = String(gloss || "");
+  if (!g) return out;
+  const re = /(?:^|[；;,，、\s[\]()（）])([a-z]{1,6})\.(?=\s|$|[\u4e00-\u9fff])/g;
+  let m;
+  while ((m = re.exec(g))) {
+    const tag = POS_ALIAS[m[1]];
+    if (tag) out.add(tag);
+  }
+  return out;
+}
+
+/**
+ * 批量查词性（仅用内置离线词典，绝不联网）。
+ * 供「动宾短语」等功能做轻量词性判断，避免逐词走联网兜底。
+ * @param {string[]} words
+ * @returns {Promise<Map<string,{pos:Set<string>,gloss:string,phonetic:string}>>}
+ */
+export async function lookupEnWordsPos(words) {
+  const list = [...new Set((words || []).map(normalizeWord).filter((w) => w && WORD_RE.test(w)))];
+  const out = new Map();
+  if (!list.length) return out;
+
+  await warmEnDict();
+  const forms = (await loadForms().catch(() => null)) || {};
+
+  const letters = new Set();
+  for (const w of list) {
+    letters.add(w[0]);
+    const base = forms[w];
+    if (base && WORD_RE.test(base)) letters.add(base[0]);
+    for (const s of stemCandidates(w)) letters.add(s[0]);
+  }
+  await Promise.all([...letters].map((L) => loadShard(L).catch(() => null)));
+
+  const shardMaps = new Map();
+  for (const L of letters) {
+    try {
+      shardMaps.set(L, await loadShard(L));
+    } catch {
+      shardMaps.set(L, null);
+    }
+  }
+  const getShard = (L) => shardMaps.get(L) || null;
+
+  for (const w of list) {
+    let info = cache.has(w) ? cache.get(w) : null;
+    if (!cache.has(w)) {
+      info = lookupOfflineFromMaps(w, forms, getShard);
+      if (cache.size >= CACHE_MAX) cache.delete(cache.keys().next().value);
+      cache.set(w, info);
+    }
+    out.set(w, {
+      pos: parsePosTags(info?.gloss),
+      gloss: info?.gloss || "",
+      phonetic: info?.phonetic || "",
+    });
+  }
+  return out;
+}
+
 /** 重音/分音节纯函数已抽到 lib/stress.js（可独立单测）；此处重导出保持既有导入路径不变 */
 import {
   formatPhonetic,
   primaryStressIndex,
   syllabifyOrtho,
   markStressOnWord,
-} from "./lib/stress.js?v=20261009novm";
+} from "./lib/stress.js?v=20261010font4";
 export { formatPhonetic, primaryStressIndex, syllabifyOrtho, markStressOnWord };
 
 /** 把重音标到点词按钮上（dataset.word 仍是原词，供朗读） */

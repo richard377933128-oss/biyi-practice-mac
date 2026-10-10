@@ -1,9 +1,9 @@
-import "./error-trap.js?v=20261009novm"; // 全局错误兜底，必须第一个 import
-import { initKvStore } from "./lib/kv-store.js?v=20261009novm";
-import { createTranslation } from "./translation.js?v=20261009novm";
+import "./error-trap.js?v=20261010font4"; // 全局错误兜底，必须第一个 import
+import { initKvStore } from "./lib/kv-store.js?v=20261010font4";
+import { createTranslation } from "./translation.js?v=20261010font4";
 // screen-record.js / system-camera.js 合计约 3700 行，启动时动态加载（见 boot() 末尾）
-import { createEdgeSpeech, getTtsEngine, setTtsEngine, getSavedVoice, setSavedVoice, ROTATE_VOICE, isRotateVoice, rotateVoiceAt, peekRotateVoice } from "./edge-tts.js?v=20261009novm";
-import { isLockStressOn, setLockStressOn } from "./lock-screen.js?v=20261009novm";
+import { createEdgeSpeech, getTtsEngine, setTtsEngine, getSavedVoice, setSavedVoice, ROTATE_VOICE, isRotateVoice, rotateVoiceAt, peekRotateVoice } from "./edge-tts.js?v=20261010font4";
+import { isLockStressOn, setLockStressOn } from "./lock-screen.js?v=20261010font4";
 import {
   CUSTOM_BANK_CODE,
   CUSTOM_ADD_CODE,
@@ -21,13 +21,13 @@ import {
   parseImportText,
   readSrtFile,
   titleFromSrtFileName,
-} from "./custom-texts.js?v=20261009novm";
+} from "./custom-texts.js?v=20261010font4";
 import {
   translateZhToEn,
   bindTranslateEngineUi,
   loadTranslatePrefs,
   polishAndTranslateZhLinesViaDeepSeek,
-} from "./en-zh.js?v=20261009novm";
+} from "./en-zh.js?v=20261010font4";
 import {
   lookupEnWord,
   showEnWordTip,
@@ -39,8 +39,9 @@ import {
   applyStressToWordEl,
   markStressOnWord,
   formatPhonetic,
-} from "./en-word-dict.js?v=20261009novm";
-import { addWord, hasWord, bindWordbook } from "./wordbook.js?v=20261009novm";
+} from "./en-word-dict.js?v=20261010font4";
+import { addWord, hasWord, bindWordbook } from "./wordbook.js?v=20261010font4";
+import { extractVoFromText, extractVerbsFromText } from "./vo-phrases.js?v=20261010font18";
 import {
   clampDictationTyped,
   autoAppendDictationExtras,
@@ -195,6 +196,8 @@ let sensePlayTotal = 0;
 let sensePlayLastClick = 0;
 /** @type {{idx:number,en:string,zh:string}[]} 意群朗读数据源（renderSenseChips 时更新） */
 let senseSpeakItems = [];
+/** 用户主动切回「完整意群」的意群 idx（默认是动宾视图，换题时清空） */
+const senseVoFull = new Set();
 
 function isSenseCollapsed() {
   // 默认折叠：只展开笔译，减少首屏信息
@@ -271,6 +274,19 @@ function fillSenseEnTapWords(enSpan, enText) {
   enSpan.replaceChildren(frag);
 }
 
+/** 意群中文末尾的「完整意群 ⇄ 动宾短语」切换按钮 */
+function makeSenseVoBtn() {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "sense-vo-btn";
+  btn.textContent = "⇄";
+  btn.title = "看完整意群";
+  btn.setAttribute("aria-label", "看完整意群");
+  // aria-expanded=true 表示当前展开成完整意群；默认是动宾视图，所以先给 false
+  btn.setAttribute("aria-expanded", "false");
+  return btn;
+}
+
 function createSenseChip(sg, idx) {
   const en = String(sg?.english || "").trim();
   const zh = String(sg?.chinese || "").trim();
@@ -281,10 +297,13 @@ function createSenseChip(sg, idx) {
   chip.className = "sense-chip";
   chip.dataset.senseIdx = String(idx);
   if (en) chip.dataset.speak = en;
+  chip.dataset.senseEn = en; // 原始意群英文，切回时用
   chip.title = en ? "点读这一意群" : "";
   chip.setAttribute("role", "group");
   chip.setAttribute("aria-label", en ? `意群 ${idx + 1}，点按朗读` : `意群 ${idx + 1}`);
 
+  // 英文先按「完整意群」渲染：动宾抽取要等离线词典分片加载（约 0.9s），
+  // 期间留白比先显示完整意群再收窄更难看。抽取完成后由 precomputeSenseVo 换成动宾视图。
   const enSpan = document.createElement("span");
   enSpan.className = "sense-en";
   if (en) fillSenseEnTapWords(enSpan, en);
@@ -293,10 +312,143 @@ function createSenseChip(sg, idx) {
 
   const zhEl = document.createElement("small");
   zhEl.className = "sense-zh";
-  zhEl.textContent = zh || "…";
+  const zhText = document.createElement("span");
+  zhText.className = "sense-zh-text";
+  zhText.textContent = zh || "…";
+  zhEl.appendChild(zhText);
+  // 切换按钮不在这里挂：只有确实抽到动宾短语的意群才配得上一个按钮，
+  // 否则一堆点不动的灰按钮反而像坏了。由 precomputeSenseVo 按结果补上。
   chip.appendChild(zhEl);
 
   return chip;
+}
+
+/** 给意群补上切换按钮（幂等） */
+function ensureSenseVoBtn(chip) {
+  const zhEl = chip?.querySelector?.(".sense-zh");
+  if (!zhEl) return null;
+  const existing = zhEl.querySelector(".sense-vo-btn");
+  if (existing) return existing;
+  const btn = makeSenseVoBtn();
+  zhEl.appendChild(btn);
+  return btn;
+}
+
+/** 取该意群的动宾短语（带缓存）；失败时不算空，保持按钮可点 */
+async function ensureSenseVoList(chip) {
+  if (chip._voPhrases) return chip._voPhrases;
+  const en = String(chip?.dataset?.senseEn || "").trim();
+  if (!en) { chip._voPhrases = []; chip._voOk = true; return chip._voPhrases; }
+  try {
+    chip._voPhrases = await extractVoFromText(en);
+    chip._voOk = true;
+  } catch (err) {
+    console.warn(err);
+    chip._voPhrases = [];
+    chip._voOk = false;
+  }
+  return chip._voPhrases;
+}
+
+/**
+ * 兜底：该意群抽不出动宾短语时，把主要动词取出来（用户要求「没动宾就弄动词」）。
+ * 带缓存；失败时留空但不影响完整意群视图。
+ */
+async function ensureSenseVerbList(chip) {
+  if (chip._verbs) return chip._verbs;
+  const en = String(chip?.dataset?.senseEn || "").trim();
+  if (!en) { chip._verbs = []; return chip._verbs; }
+  try {
+    chip._verbs = await extractVerbsFromText(en);
+  } catch (err) {
+    console.warn(err);
+    chip._verbs = [];
+  }
+  return chip._verbs;
+}
+
+/**
+ * 意群「短视图」要展示的内容：优先动宾短语，没有就退回动词。
+ * @returns {{items:Array,kind:"vo"|"verb"|"none"}}
+ */
+function senseShortItems(chip) {
+  const vo = chip?._voPhrases || [];
+  if (vo.length) return { items: vo, kind: "vo" };
+  const vb = chip?._verbs || [];
+  if (vb.length) return { items: vb, kind: "verb" };
+  return { items: [], kind: "none" };
+}
+
+/**
+ * 把某个意群渲染成指定视图。
+ * @param {"vo"|"full"} mode
+ */
+function applySenseView(chip, mode) {
+  const enSpan = chip?.querySelector?.(".sense-en");
+  const btn = chip?.querySelector?.(".sense-vo-btn");
+  const full = String(chip?.dataset?.senseEn || "").trim();
+  if (!enSpan) return;
+  const { items, kind } = senseShortItems(chip);
+  const useVo = mode === "vo" && items.length > 0;
+  const text = useVo ? items.map((p) => p.phrase).join(" / ") : full;
+  chip.dataset.vo = useVo ? "1" : "0";
+  chip.dataset.voKind = useVo ? kind : "";
+  fillSenseEnTapWords(enSpan, text);
+  enSpan.hidden = !text;
+  chip.dataset.speak = text;
+  if (btn) {
+    btn.setAttribute("aria-expanded", useVo ? "false" : "true");
+    const short = kind === "verb" ? "只看动词" : "只看动宾短语";
+    const label = useVo ? "看完整意群" : short;
+    btn.title = label;
+    btn.setAttribute("aria-label", label);
+  }
+  applySenseChipFonts(chip);
+  // 新生成的单词按钮要补重音标记，才和原意群长得一样
+  annotateEnTapStress(chip).catch((err) => console.warn(err));
+}
+
+/** 点一下 ⇄：短视图（动宾短语 / 动词）⇄ 完整意群 */
+async function toggleSenseVo(chip) {
+  const idx = String(chip?.dataset?.senseIdx || "");
+  if (!chip?.dataset?.senseEn) return;
+  if (chip.dataset.voResolved !== "1") return; // 还没算完，此时按钮是禁用的
+  const showingVo = chip.dataset.vo === "1";
+  if (showingVo) {
+    // 用户主动要求看完整意群：记下来，别被 precompute 再切回短视图
+    senseVoFull.add(idx);
+    applySenseView(chip, "full");
+    return;
+  }
+  await ensureSenseVoList(chip);
+  if (!senseShortItems(chip).items.length) await ensureSenseVerbList(chip);
+  if (!senseShortItems(chip).items.length) {
+    if (chip._voOk) toast("这一意群没有可提取的动词");
+    return;
+  }
+  senseVoFull.delete(idx);
+  applySenseView(chip, "vo");
+}
+
+/**
+ * 渲染后统一算一遍每个意群的动宾短语（抽不到就退回动词）：
+ * 有内容的默认切到短视图，实在没有的则留在完整意群且不挂按钮。
+ */
+async function precomputeSenseVo(block) {
+  const chips = Array.from(block?.querySelectorAll?.(".sense-chip") || []);
+  for (const chip of chips) {
+    if (chip.dataset.voResolved === "1") continue;
+    const idx = String(chip.dataset.senseIdx || "");
+    await ensureSenseVoList(chip);
+    if (!senseShortItems(chip).items.length) await ensureSenseVerbList(chip);
+    if (!senseShortItems(chip).items.length) {
+      applySenseView(chip, "full");
+    } else {
+      ensureSenseVoBtn(chip);
+      applySenseView(chip, senseVoFull.has(idx) ? "full" : "vo");
+    }
+    chip.dataset.voResolved = "1";
+  }
 }
 
 /** 把当前练习页中/英文字体写到意群节点（兼容 iOS button） */
@@ -482,6 +634,13 @@ function bindSenseScrollUi() {
     const chip = e.target?.closest?.(".sense-chip");
     if (!chip || !block.contains(chip)) return;
     e.preventDefault();
+    // 切换按钮：只切换视图，不朗读
+    const voBtn = e.target?.closest?.(".sense-vo-btn");
+    if (voBtn && chip.contains(voBtn)) {
+      e.stopPropagation();
+      toggleSenseVo(chip).catch((err) => console.warn(err));
+      return;
+    }
     // 点中某个英文单词：只读这个词；点卡片其余位置（空白处/中文）：读整个意群
     const wordEl = e.target?.closest?.(".en-tap-word");
     if (wordEl && chip.contains(wordEl)) {
@@ -530,6 +689,7 @@ function renderSenseChips(q) {
   const frag = document.createDocumentFragment();
   let count = 0;
   senseSpeakItems = [];
+  senseVoFull.clear();
   groups.forEach((sg, idx) => {
     const en = String(sg?.english || "").trim();
     const zh = String(sg?.chinese || "").trim();
@@ -549,9 +709,13 @@ function renderSenseChips(q) {
   if (!count) return;
 
   const gen = senseAnnotateGen;
-  annotateEnTapStress(block, {
-    isStale: () => gen !== senseAnnotateGen,
-  })
+  // 先把每个意群的英文按「动宾 / 完整」视图填好，再统一补重音标记——
+  // 顺序反了的话 biyi-sense-stress-ready 会在英文还是空的时候发出去。
+  precomputeSenseVo(block)
+    .then(() => {
+      if (gen !== senseAnnotateGen) return;
+      return annotateEnTapStress(block, { isStale: () => gen !== senseAnnotateGen });
+    })
     .then(() => {
       if (gen !== senseAnnotateGen) return;
       applySenseChipFonts(block);
@@ -3442,8 +3606,8 @@ async function boot() {
   const idle = window.requestIdleCallback || ((fn) => setTimeout(fn, 300));
   idle(() => {
     Promise.all([
-      import("./screen-record.js?v=20261009novm"),
-      import("./system-camera.js?v=20261009novm"),
+      import("./screen-record.js?v=20261010font12"),
+      import("./system-camera.js?v=20261010font4"),
     ])
       .then(([sr, sc]) => {
         sr.createScreenRecord({ $, toast });
