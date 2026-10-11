@@ -1,6 +1,6 @@
-import { translateEnLinesToZh, translateZhLinesToEn } from "./en-zh.js?v=20261011nowrap1";
-import { deleteSpeechClips, speechCacheKey } from "./tts-cache.js?v=20261011nowrap1";
-import { kvGet, kvSet } from "./lib/kv-store.js?v=20261011nowrap1";
+import { translateEnLinesToZh, translateZhLinesToEn } from "./en-zh.js?v=20261011caret1";
+import { deleteSpeechClips, speechCacheKey } from "./tts-cache.js?v=20261011caret1";
+import { kvGet, kvSet } from "./lib/kv-store.js?v=20261011caret1";
 
 const STORAGE_KEY = "pte_custom_texts";
 export const CUSTOM_BANK_CODE = "CUSTOM";

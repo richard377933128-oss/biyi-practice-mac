@@ -1,7 +1,7 @@
 
-import { bindEnglishInputOnFocus } from "./ime-english.js?v=20261011nowrap1";
-import { createEdgeSpeech } from "./edge-tts.js?v=20261011nowrap1";
-import { annotateEnTapStress } from "./en-word-dict.js?v=20261011nowrap1";
+import { bindEnglishInputOnFocus } from "./ime-english.js?v=20261011caret1";
+import { createEdgeSpeech } from "./edge-tts.js?v=20261011caret1";
+import { annotateEnTapStress } from "./en-word-dict.js?v=20261011caret1";
 
 export function createTranslation({ state, $, toast, saveTranslationMemory, renderQuestion, syncDictationUI, setDictationOn, setPassageFocusOn, persistCurrentDictation, passageMarkKey, currentQuestion, ensureSenseGroupsVisible, clampDictationTyped, autoAppendDictationExtras, isDictationAutoWord, normalizeDictationText, sameDictationChar, dictationCharLabel, dictationErrorHint, moveQuestion }) {
   const speech = createEdgeSpeech();
@@ -148,15 +148,31 @@ export function createTranslation({ state, $, toast, saveTranslationMemory, rend
     return matched > 0;
   }
 
-  function appendProgressPieces(parent, raw, start, typedLen) {
-    const doneLen = Math.max(0, Math.min(String(raw).length, typedLen - start));
-    const done = String(raw).slice(0, doneLen);
-    const rest = String(raw).slice(doneLen);
+  function makeAnswerCaret() {
+    const el = document.createElement("span");
+    el.className = "translation-caret";
+    el.setAttribute("aria-hidden", "true");
+    return el;
+  }
+
+  /** caret：{ el, placed }——同一次重绘里只插一次，插在「已输入 / 未输入」的分界处 */
+  function appendProgressPieces(parent, raw, start, typedLen, caret) {
+    const text = String(raw);
+    const doneLen = Math.max(0, Math.min(text.length, typedLen - start));
+    const done = text.slice(0, doneLen);
+    const rest = text.slice(doneLen);
     if (done) {
       const d = document.createElement("span");
       d.className = "translation-answer-done";
       d.textContent = done;
       parent.appendChild(d);
+    }
+    // 叠层自绘光标：紧跟已输入的最后一个字母。
+    // 原生光标由透明 textarea 单独排版（只含已输入文字），叠层按整句排版，
+    // 单词整词换行时两者会脱队（光标留在上一行行尾），所以光标改由叠层画（2026-10-11 修）。
+    if (caret && !caret.placed && text.length > 0 && typedLen >= start && typedLen < start + text.length) {
+      parent.appendChild(caret.el);
+      caret.placed = true;
     }
     if (rest) {
       const r = document.createElement("span");
@@ -168,12 +184,13 @@ export function createTranslation({ state, $, toast, saveTranslationMemory, rend
 
   function paintAnswerGhostProgress(ghost, typedLen) {
     if (!ghost) return;
+    const caret = { el: makeAnswerCaret(), placed: false };
     let pos = 0;
     for (const el of ghost.children) {
       if (el.classList.contains("en-tap-sep")) {
         const raw = el.dataset.raw ?? "";
         el.replaceChildren();
-        appendProgressPieces(el, raw, pos, typedLen);
+        appendProgressPieces(el, raw, pos, typedLen, caret);
         pos += raw.length;
         continue;
       }
@@ -195,20 +212,24 @@ export function createTranslation({ state, $, toast, saveTranslationMemory, rend
         if (prefix) {
           const pre = document.createElement("span");
           pre.className = "en-stress-prefix";
-          appendProgressPieces(pre, prefix, wordStart, typedLen);
+          appendProgressPieces(pre, prefix, wordStart, typedLen, caret);
           el.appendChild(pre);
         }
         mark.classList.toggle("is-untyped", typedLen < wordStart + prefixLen);
         el.appendChild(mark);
         const sylWrap = document.createElement("span");
         sylWrap.className = "en-stress-syl";
-        appendProgressPieces(sylWrap, sylText, wordStart + prefixLen, typedLen);
+        appendProgressPieces(sylWrap, sylText, wordStart + prefixLen, typedLen, caret);
         el.appendChild(sylWrap);
       } else {
         el.replaceChildren();
-        appendProgressPieces(el, raw, wordStart, typedLen);
+        appendProgressPieces(el, raw, wordStart, typedLen, caret);
       }
       pos += raw.length;
+    }
+    // 光标落在所有分界之外时（已输满整个意群）：贴到末尾
+    if (!caret.placed && typedLen > 0 && ghost.lastElementChild) {
+      ghost.lastElementChild.appendChild(caret.el);
     }
   }
 

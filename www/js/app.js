@@ -1,9 +1,9 @@
-import "./error-trap.js?v=20261011nowrap1"; // 全局错误兜底，必须第一个 import
-import { initKvStore } from "./lib/kv-store.js?v=20261011nowrap1";
-import { createTranslation } from "./translation.js?v=20261011nowrap1";
+import "./error-trap.js?v=20261011caret1"; // 全局错误兜底，必须第一个 import
+import { initKvStore } from "./lib/kv-store.js?v=20261011caret1";
+import { createTranslation } from "./translation.js?v=20261011caret1";
 // screen-record.js / system-camera.js 合计约 3700 行，启动时动态加载（见 boot() 末尾）
-import { createEdgeSpeech, getTtsEngine, setTtsEngine, getSavedVoice, setSavedVoice, ROTATE_VOICE, isRotateVoice, rotateVoiceAt, peekRotateVoice } from "./edge-tts.js?v=20261011nowrap1";
-import { isLockStressOn, setLockStressOn } from "./lock-screen.js?v=20261011nowrap1";
+import { createEdgeSpeech, getTtsEngine, setTtsEngine, getSavedVoice, setSavedVoice, ROTATE_VOICE, isRotateVoice, rotateVoiceAt, peekRotateVoice } from "./edge-tts.js?v=20261011caret1";
+import { isLockStressOn, setLockStressOn } from "./lock-screen.js?v=20261011caret1";
 import {
   CUSTOM_BANK_CODE,
   CUSTOM_ADD_CODE,
@@ -21,13 +21,13 @@ import {
   parseImportText,
   readSrtFile,
   titleFromSrtFileName,
-} from "./custom-texts.js?v=20261011nowrap1";
+} from "./custom-texts.js?v=20261011caret1";
 import {
   translateZhToEn,
   bindTranslateEngineUi,
   loadTranslatePrefs,
   polishAndTranslateZhLinesViaDeepSeek,
-} from "./en-zh.js?v=20261011nowrap1";
+} from "./en-zh.js?v=20261011caret1";
 import {
   lookupEnWord,
   showEnWordTip,
@@ -39,9 +39,9 @@ import {
   applyStressToWordEl,
   markStressOnWord,
   formatPhonetic,
-} from "./en-word-dict.js?v=20261011nowrap1";
-import { addWord, hasWord, bindWordbook } from "./wordbook.js?v=20261011nowrap1";
-import { extractVoFromText, extractVerbsFromText } from "./vo-phrases.js?v=20261011nowrap1";
+} from "./en-word-dict.js?v=20261011caret1";
+import { addWord, hasWord, bindWordbook } from "./wordbook.js?v=20261011caret1";
+import { extractVoFromText, extractVerbsFromText } from "./vo-phrases.js?v=20261011caret1";
 import {
   clampDictationTyped,
   autoAppendDictationExtras,
@@ -3674,8 +3674,8 @@ async function boot() {
   const idle = window.requestIdleCallback || ((fn) => setTimeout(fn, 300));
   idle(() => {
     Promise.all([
-      import("./screen-record.js?v=20261011nowrap1"),
-      import("./system-camera.js?v=20261011nowrap1"),
+      import("./screen-record.js?v=20261011caret1"),
+      import("./system-camera.js?v=20261011caret1"),
     ])
       .then(([sr, sc]) => {
         sr.createScreenRecord({ $, toast });

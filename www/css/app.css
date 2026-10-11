@@ -1150,7 +1150,7 @@ body.zh-first .en-full-pair .en-full-zh { order: 1; margin-top: 0; }
 .translation-answer-wrap:not(.is-answer-on) .translation-answer-rest {
   visibility: hidden;
 }
-/* 已输入部分由叠层显示（含重音），输入框只留光标 */
+/* 已输入部分由叠层显示（含重音与光标），透明输入框只负责聚焦与输入 */
 .translation-answer-done {
   color: var(--ink);
   -webkit-text-fill-color: var(--ink);
@@ -1160,13 +1160,43 @@ body.zh-first .en-full-pair .en-full-zh { order: 1; margin-top: 0; }
   color: rgba(16, 35, 28, 0.34);
   -webkit-text-fill-color: rgba(16, 35, 28, 0.34);
 }
+/* 叠层自绘光标：透明 textarea 的原生光标按「已输入文字」单独排版，叠层按整句排版，
+   两者不一致时会脱队——如 University's 整词换行到下一行后，光标仍留在上一行行尾。
+   光标改由叠层实时绘制，紧贴已输入的最后一个字母（2026-10-11 修）。 */
+.translation-answer-ghost .translation-caret {
+  display: none;
+}
+.translation-answer-wrap:focus-within .translation-answer-ghost .translation-caret {
+  display: inline-block;
+  width: 0;
+  height: 1.05em;
+  vertical-align: -0.18em;
+  overflow: visible;
+  position: relative;
+  pointer-events: none;
+  visibility: visible; /* 盖过「未开启答案时 pending 整词隐藏」的继承 */
+}
+.translation-answer-wrap:focus-within .translation-answer-ghost .translation-caret::before {
+  content: "";
+  position: absolute;
+  left: -1px;
+  top: 0;
+  bottom: 0;
+  width: 1.5px;
+  border-radius: 1px;
+  background: var(--ink);
+  animation: translation-caret-blink 1.05s step-end infinite;
+}
+@keyframes translation-caret-blink {
+  50% { opacity: 0; }
+}
 .translation-answer-wrap.is-ghost-en .dictation-input {
   position: relative;
   z-index: 1;
   background: transparent !important;
   color: transparent;
   -webkit-text-fill-color: transparent;
-  caret-color: var(--ink);
+  caret-color: transparent; /* 原生光标不再使用，改由叠层 .translation-caret 自绘（2026-10-11） */
 }
 .translation-answer-wrap.is-answer-on .dictation-input {
   position: relative;
