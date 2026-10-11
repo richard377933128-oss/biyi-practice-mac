@@ -64,7 +64,7 @@
       font-display: swap;
     }
   </style>
-  <link rel="stylesheet" href="./css/app.css?v=20261010font12" />
+  <link rel="stylesheet" href="./css/app.css?v=20261011nowrap1" />
 </head>
 <body>
   <main id="view-practice" class="view translation-on">
@@ -80,6 +80,7 @@
             <span data-camera-btn-timer hidden>0:00</span>
           </button>
           <button type="button" class="btn btn-ghost btn-compact" id="btn-voice-pick" title="选择朗读音色（全局：全文、意群、笔译）">音色</button>
+          <button type="button" class="btn btn-ghost btn-compact" id="btn-order-toggle" title="切换中英显示顺序（全局：意群、全文）" aria-pressed="false">英中</button>
           <button type="button" class="btn btn-ghost btn-compact" id="btn-bank-playlist" title="列表播放：单击暂停/继续，双击结束（声音用「音色」设定）">播放</button>
           <div class="topbar-more" id="topbar-more">
             <button type="button" class="btn btn-ghost btn-compact topbar-more-trigger" id="btn-topbar-more" title="更多" aria-haspopup="menu" aria-expanded="false">更多</button>
@@ -710,6 +711,6 @@
   </div>
 
   <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
-  <script type="module" src="./js/app.js?v=20261010no-voice1"></script>
+  <script type="module" src="./js/app.js?v=20261011nowrap1"></script>
 </body>
 </html>

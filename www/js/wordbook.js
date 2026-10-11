@@ -1,6 +1,6 @@
 /** 个人难词本：点单词气泡「添加」后可随时在「词典」里查 */
 
-import { kvGet, kvSet, kvRemove } from "./lib/kv-store.js?v=20261010font4";
+import { kvGet, kvSet, kvRemove } from "./lib/kv-store.js?v=20261011nowrap1";
 
 const KEY = "biyi_wordbook";
 const AUTH_KEY = "biyi_wordbook_auth";

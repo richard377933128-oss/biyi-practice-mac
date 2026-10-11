@@ -1,9 +1,9 @@
-import "./error-trap.js?v=20261010font4"; // 全局错误兜底，必须第一个 import
-import { initKvStore } from "./lib/kv-store.js?v=20261010font4";
-import { createTranslation } from "./translation.js?v=20261010font4";
+import "./error-trap.js?v=20261011nowrap1"; // 全局错误兜底，必须第一个 import
+import { initKvStore } from "./lib/kv-store.js?v=20261011nowrap1";
+import { createTranslation } from "./translation.js?v=20261011nowrap1";
 // screen-record.js / system-camera.js 合计约 3700 行，启动时动态加载（见 boot() 末尾）
-import { createEdgeSpeech, getTtsEngine, setTtsEngine, getSavedVoice, setSavedVoice, ROTATE_VOICE, isRotateVoice, rotateVoiceAt, peekRotateVoice } from "./edge-tts.js?v=20261010font4";
-import { isLockStressOn, setLockStressOn } from "./lock-screen.js?v=20261010font4";
+import { createEdgeSpeech, getTtsEngine, setTtsEngine, getSavedVoice, setSavedVoice, ROTATE_VOICE, isRotateVoice, rotateVoiceAt, peekRotateVoice } from "./edge-tts.js?v=20261011nowrap1";
+import { isLockStressOn, setLockStressOn } from "./lock-screen.js?v=20261011nowrap1";
 import {
   CUSTOM_BANK_CODE,
   CUSTOM_ADD_CODE,
@@ -21,13 +21,13 @@ import {
   parseImportText,
   readSrtFile,
   titleFromSrtFileName,
-} from "./custom-texts.js?v=20261010font4";
+} from "./custom-texts.js?v=20261011nowrap1";
 import {
   translateZhToEn,
   bindTranslateEngineUi,
   loadTranslatePrefs,
   polishAndTranslateZhLinesViaDeepSeek,
-} from "./en-zh.js?v=20261010font4";
+} from "./en-zh.js?v=20261011nowrap1";
 import {
   lookupEnWord,
   showEnWordTip,
@@ -39,9 +39,9 @@ import {
   applyStressToWordEl,
   markStressOnWord,
   formatPhonetic,
-} from "./en-word-dict.js?v=20261010font4";
-import { addWord, hasWord, bindWordbook } from "./wordbook.js?v=20261010font4";
-import { extractVoFromText, extractVerbsFromText } from "./vo-phrases.js?v=20261010font18";
+} from "./en-word-dict.js?v=20261011nowrap1";
+import { addWord, hasWord, bindWordbook } from "./wordbook.js?v=20261011nowrap1";
+import { extractVoFromText, extractVerbsFromText } from "./vo-phrases.js?v=20261011nowrap1";
 import {
   clampDictationTyped,
   autoAppendDictationExtras,
@@ -678,6 +678,34 @@ function bindSenseScrollUi() {
   });
 }
 
+/**
+ * 换题后后台预取本文全部意群音频（已在本机的自动跳过）。
+ * 这样点「朗读」时音频多半已在本机：秒出声，不再出现「加载音频」进度条。
+ * 只在联网引擎下进行；iPhone 默认的本机引擎（Apple 朗读）不需要。
+ */
+let sensePrefetchSeq = 0;
+let sensePrefetchTimer = 0;
+
+function prefetchSenseAudio() {
+  const seq = ++sensePrefetchSeq;
+  clearTimeout(sensePrefetchTimer);
+  // 晚一点再开始，把首屏渲染和网络带宽先让给页面本身
+  sensePrefetchTimer = setTimeout(() => {
+    if (seq !== sensePrefetchSeq) return; // 期间已换到别的题
+    if (getTtsEngine() !== "online") return; // 本机引擎无需联网预取
+    const seen = new Set();
+    const lines = [];
+    for (const it of senseSpeakItems) {
+      const t = String(it?.en || "").replace(/\s+/g, " ").trim();
+      if (!t || seen.has(t)) continue;
+      seen.add(t);
+      lines.push(t);
+    }
+    if (!lines.length) return;
+    enFullSpeech.prefetchLines?.(lines, { concurrency: 3, voice: getFullVoice() }).catch(() => {});
+  }, 1500);
+}
+
 function renderSenseChips(q) {
   const block = $("#sense-block");
   if (!block) return;
@@ -707,6 +735,8 @@ function renderSenseChips(q) {
   applySenseChipFonts(block);
   syncSenseFoldUi();
   if (!count) return;
+
+  prefetchSenseAudio();
 
   const gen = senseAnnotateGen;
   // 先把每个意群的英文按「动宾 / 完整」视图填好，再统一补重音标记——
@@ -3415,6 +3445,44 @@ function closeTopbarMenus({ keepMore = false, keepText = false } = {}) {
   }
 }
 
+/**
+ * 中英显示顺序（全局：意群、全文）。
+ * 只切 CSS 的 order，不动 DOM —— 朗读、高亮、滚动定位都按数据走，不受显示顺序影响。
+ * 选择记在本机，下次打开还是这个顺序。
+ */
+const ORDER_ZH_FIRST_KEY = "biyi_zh_first_order";
+
+function isZhFirstOrder() {
+  return document.body.classList.contains("zh-first");
+}
+
+function applyZhFirstOrder(on) {
+  document.body.classList.toggle("zh-first", !!on);
+  const btn = $("#btn-order-toggle");
+  if (!btn) return;
+  btn.textContent = on ? "中英" : "英中";
+  btn.title = on
+    ? "当前：中文在前、英文在后（点击切回英文在前）"
+    : "当前：英文在前、中文在后（点击切成中文在前）";
+  btn.setAttribute("aria-pressed", on ? "true" : "false");
+}
+
+function bindOrderToggle() {
+  let zhFirst = false;
+  try {
+    zhFirst = localStorage.getItem(ORDER_ZH_FIRST_KEY) === "1";
+  } catch (_) {}
+  applyZhFirstOrder(zhFirst);
+  $("#btn-order-toggle")?.addEventListener("click", () => {
+    const next = !isZhFirstOrder();
+    applyZhFirstOrder(next);
+    try {
+      localStorage.setItem(ORDER_ZH_FIRST_KEY, next ? "1" : "0");
+    } catch (_) {}
+    toast(next ? "已切换：中文在前" : "已切换：英文在前");
+  });
+}
+
 function bindTopbarMenus() {
   const moreBtn = $("#btn-topbar-more");
   const morePanel = $("#topbar-more-panel");
@@ -3606,8 +3674,8 @@ async function boot() {
   const idle = window.requestIdleCallback || ((fn) => setTimeout(fn, 300));
   idle(() => {
     Promise.all([
-      import("./screen-record.js?v=20261010font12"),
-      import("./system-camera.js?v=20261010font4"),
+      import("./screen-record.js?v=20261011nowrap1"),
+      import("./system-camera.js?v=20261011nowrap1"),
     ])
       .then(([sr, sc]) => {
         sr.createScreenRecord({ $, toast });
@@ -3651,6 +3719,7 @@ async function boot() {
       new ResizeObserver(() => scheduleFitToolbarSwitchesScale()).observe(toolbar);
     }
   }
+  bindOrderToggle();
   bindCustomTextUi();
   bindTranslateEngineUi();
   bindJumpUi();

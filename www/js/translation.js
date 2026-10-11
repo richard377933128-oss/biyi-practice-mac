@@ -1,7 +1,7 @@
 
-import { bindEnglishInputOnFocus } from "./ime-english.js?v=20261010font4";
-import { createEdgeSpeech } from "./edge-tts.js?v=20261010font4";
-import { annotateEnTapStress } from "./en-word-dict.js?v=20261010font4";
+import { bindEnglishInputOnFocus } from "./ime-english.js?v=20261011nowrap1";
+import { createEdgeSpeech } from "./edge-tts.js?v=20261011nowrap1";
+import { annotateEnTapStress } from "./en-word-dict.js?v=20261011nowrap1";
 
 export function createTranslation({ state, $, toast, saveTranslationMemory, renderQuestion, syncDictationUI, setDictationOn, setPassageFocusOn, persistCurrentDictation, passageMarkKey, currentQuestion, ensureSenseGroupsVisible, clampDictationTyped, autoAppendDictationExtras, isDictationAutoWord, normalizeDictationText, sameDictationChar, dictationCharLabel, dictationErrorHint, moveQuestion }) {
   const speech = createEdgeSpeech();
@@ -11,6 +11,11 @@ export function createTranslation({ state, $, toast, saveTranslationMemory, rend
   /** 上次从意群 chip 同步过来的重音签名；变化时重拉，避免自己查词典猜重音 */
   let answerGhostStressSig = "";
   let answerStressFromChipBound = false;
+  /** 输入法（IME）组合输入中：此期间绝不改写 value / 拉光标。
+   *  注意必须声明在 createTranslation 闭包作用域——applyTranslationValue / onTranslationInput
+   *  都要读它；先前误放在 bindTranslation() 内部，导致这两个函数读到未定义变量抛 ReferenceError，
+   *  input 事件整条链路中断（iOS 上表现就是「打字输入不进去、字还是浅灰色」）。 */
+  let composing = false;
 
   const TTS_PREF_KEY = "biyi_tts_on";
   const ANSWER_PREF_KEY = "biyi_answer_on";
@@ -295,6 +300,8 @@ export function createTranslation({ state, $, toast, saveTranslationMemory, rend
         .catch((err) => console.warn(err));
     }
     paintAnswerGhostProgress(ghost, n);
+    // 答案随意群/进度变化后重新贴合高度，保证正好容纳答案
+    fitTranslationInputHeight();
   }
 
   function bindAnswerStressFromChip() {
@@ -413,10 +420,22 @@ export function createTranslation({ state, $, toast, saveTranslationMemory, rend
   function fitTranslationInputHeight() {
     const input = $("#translation-input");
     if (!input) return;
+    const ghost = $("#translation-answer-ghost");
     input.style.height = "auto";
+    let need = input.scrollHeight;
+    // 输入框是透明的，真正显示内容的是下层答案叠层（含未输入的剩余答案）。
+    // 按「完整答案」的高度定高，才能刚好容纳当前意群的答案：不截断、不出滚动条、也不多余留白。
+    if (ghost && getComputedStyle(ghost).display !== "none") {
+      const borderY = input.offsetHeight - input.clientHeight;
+      const ghostNeed = ghost.scrollHeight + (Number.isFinite(borderY) ? borderY : 0);
+      if (ghostNeed > need) need = ghostNeed;
+    }
     const min = parseFloat(getComputedStyle(input).minHeight) || 0;
+    // CSS 里 max-height 已设为 none（parseFloat("none") 为 NaN → Infinity），
+    // 保证再长的意群也能整段显示；分页靠页面滚动，不再截断答案。
     const max = parseFloat(getComputedStyle(input).maxHeight) || Infinity;
-    const next = Math.min(Math.max(input.scrollHeight, min), max);
+    const next = Math.round(Math.min(Math.max(need, min), max));
+    if (!Number.isFinite(next)) return;
     input.style.height = `${next}px`;
   }
 
@@ -1294,6 +1313,8 @@ export function createTranslation({ state, $, toast, saveTranslationMemory, rend
   
   function applyTranslationValue(raw) {
     if (!state.translation.on) return;
+    // 输入法组合输入期间不要重写 value/拉光标，避免光标/候选框漂移
+    if (composing) return;
     const target = state.translation.target || "";
     const next = normalizeDictationText(raw);
     const input = $("#translation-input");
@@ -1339,7 +1360,11 @@ export function createTranslation({ state, $, toast, saveTranslationMemory, rend
   
   function onTranslationInput(e) {
     if (!state.translation.on) return;
-    if (e.isComposing || e.inputType === "insertCompositionText") return;
+    // iOS 软键盘在 composition 阶段可能 still 触发 input，直接改 value 会打断候选框/光标
+    if (e.isComposing || e.inputType === "insertCompositionText" || composing) {
+      fitTranslationInputHeight();
+      return;
+    }
     applyTranslationValue(e.target.value);
   }
   
@@ -1595,6 +1620,14 @@ export function createTranslation({ state, $, toast, saveTranslationMemory, rend
       calSelectedKey = cell.dataset.date || "";
       renderWordsCalendar();
     });
+    // composing 在 createTranslation 闭包作用域声明，这里只做绑定
+    input?.addEventListener("compositionstart", () => {
+      composing = true;
+    });
+    input?.addEventListener("compositionend", (e) => {
+      composing = false;
+      applyTranslationValue(e.target.value);
+    });
     input?.addEventListener("input", (e) => {
       fitTranslationInputHeight();
       onTranslationInput(e);
@@ -1605,23 +1638,26 @@ export function createTranslation({ state, $, toast, saveTranslationMemory, rend
     });
     input?.addEventListener("focus", () => {
       fitTranslationInputHeight();
-      placeTranslationCaret(input);
+      if (!composing) placeTranslationCaret(input);
     });
     input?.addEventListener("pointerup", () => {
       requestAnimationFrame(() => {
-        if (!input || input.selectionStart !== input.selectionEnd) return;
+        if (!input || composing || input.selectionStart !== input.selectionEnd) return;
         placeTranslationCaret(input);
       });
     });
     input?.addEventListener("keydown", (e) => {
-      if (e.isComposing || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.isComposing || composing || e.metaKey || e.ctrlKey || e.altKey) return;
       // 练习页禁止回车换行 / 拆分意群
       if (e.key === "Enter") {
         e.preventDefault();
         return;
       }
       if (e.key.length !== 1) return;
-      placeTranslationCaret(input);
+      // 延迟到下一帧，确保 iOS 已触发 compositionstart 后再决定是否拉光标
+      requestAnimationFrame(() => {
+        if (!composing) placeTranslationCaret(input);
+      });
     });
     input?.addEventListener("beforeinput", (e) => {
       if (e.inputType === "insertParagraph" || e.inputType === "insertLineBreak") {
@@ -1632,9 +1668,17 @@ export function createTranslation({ state, $, toast, saveTranslationMemory, rend
       if (state.translation.on) fitTranslationInputHeight();
       scheduleFitTranslationLeadSize();
     });
-    document.addEventListener("biyi-practice-fonts", () => scheduleFitTranslationLeadSize());
+    document.addEventListener("biyi-practice-fonts", () => {
+      if (state.translation.on) fitTranslationInputHeight();
+      scheduleFitTranslationLeadSize();
+    });
     if (document.fonts?.ready) {
-      document.fonts.ready.then(() => scheduleFitTranslationLeadSize()).catch(() => {});
+      document.fonts.ready
+        .then(() => {
+          if (state.translation.on) fitTranslationInputHeight();
+          scheduleFitTranslationLeadSize();
+        })
+        .catch(() => {});
     }
     const leadEl = $("#translation-lead");
     const wrapEl = $("#passage-wrap");
@@ -1645,7 +1689,15 @@ export function createTranslation({ state, $, toast, saveTranslationMemory, rend
     }
     fitTranslationInputHeight();
     scheduleFitTranslationLeadSize();
-    input?.addEventListener("compositionend", (e) => applyTranslationValue(e.target.value));
+    // 自愈：答案叠层内容一变（换意群 / 描红进度 / 重音标注等）就重新贴合高度。
+    // 这样无论调用先后顺序如何，笔译框都正好容纳当前答案，不会出现「只有一行高、答案被截断」。
+    const ghostEl = $("#translation-answer-ghost");
+    if (ghostEl && typeof MutationObserver !== "undefined") {
+      const mo = new MutationObserver(() => {
+        if (state.translation.on) fitTranslationInputHeight();
+      });
+      mo.observe(ghostEl, { childList: true, subtree: true, characterData: true });
+    }
     input?.addEventListener("paste", (e) => {
       e.preventDefault();
       const text = e.clipboardData?.getData("text") || "";

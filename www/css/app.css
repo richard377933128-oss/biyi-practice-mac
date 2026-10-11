@@ -465,6 +465,10 @@ button { -webkit-tap-highlight-color: transparent; }
   line-height: inherit;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
+  /* 单词整体不可断行：词内插着重音标记（.en-stress-mark，笔译叠层里是零宽 inline-block），
+     它会被断行算法当成换行点，把 politicians 断成 poliˈ / ticians。
+     任何英文单词都只能整词换行（2026-10-11 修）。 */
+  white-space: nowrap;
 }
 .en-tap-word:hover,
 .en-tap-word:focus-visible {
@@ -530,6 +534,7 @@ button { -webkit-tap-highlight-color: transparent; }
   font-weight: 800;
   letter-spacing: 0.01em;
   color: var(--ink);
+  white-space: nowrap; /* 同 .en-tap-word：词内重音标记不得成为换行点（2026-10-11 修） */
 }
 .en-word-tip-phonetic {
   margin-top: 0.12rem;
@@ -721,6 +726,19 @@ button { -webkit-tap-highlight-color: transparent; }
   box-shadow: 0 0 0 3px rgba(31, 111, 91, 0.1);
 }
 .sense-chip.trans-done { border-color: rgba(31, 111, 91, 0.28); }
+
+/* 中英显示顺序（顶栏「英中 / 中英」按钮，见 #btn-order-toggle）
+   默认：英文在上、中文在下；body.zh-first 时整体反转。
+   用 order 而不是改 DOM，切换即时生效，朗读/高亮/滚动定位都不受影响。 */
+.sense-chip .sense-en { order: 1; }
+.sense-chip .sense-zh { order: 2; }
+.sense-chip .sense-tts-progress { order: 9; }
+
+body.zh-first .sense-chip .sense-en { order: 2; margin-top: 0.28rem; }
+body.zh-first .sense-chip .sense-zh { order: 1; margin-top: 0; }
+body.zh-first .en-full-pair { display: flex; flex-direction: column; }
+body.zh-first .en-full-pair .en-full-en { order: 2; margin-top: 0.15rem; }
+body.zh-first .en-full-pair .en-full-zh { order: 1; margin-top: 0; }
 
 .passage-wrap {
   position: relative;
@@ -1043,7 +1061,7 @@ button { -webkit-tap-highlight-color: transparent; }
   width: 100%;
   min-height: calc(1.9em + 1.7rem);
   height: calc(1.9em + 1.7rem);
-  max-height: min(40vh, 14rem);
+  max-height: none; /* 高度完全由 JS 按答案高度贴合；设上限会截断长意群的答案（2026-10-11 修） */
   overflow-y: auto;
   resize: none;
   border: 1px solid var(--line);
@@ -1054,7 +1072,8 @@ button { -webkit-tap-highlight-color: transparent; }
   line-height: 1.9;
   padding: 0.85rem 0.95rem;
   outline: none;
-  field-sizing: content;
+  /* 高度由 JS fitTranslationInputHeight 动态调整；field-sizing: content 在 iOS Safari 下会让 composition 阶段光标位置异常，所以不用。 */
+  /* field-sizing: content; */
   font-family: var(--practice-en-font, var(--font-body)) !important;
   font-style: var(--practice-en-font-style, normal);
 }
@@ -1075,7 +1094,10 @@ button { -webkit-tap-highlight-color: transparent; }
   pointer-events: none;
   user-select: none;
   white-space: pre-wrap;
-  word-break: break-word;
+  /* 不允许词内断行：词内断点交给 .en-tap-word 的 nowrap 兜底，
+     break-word 在这里只作为「单个超长词整行放不下」时的最后手段（2026-10-11 修） */
+  word-break: normal;
+  overflow-wrap: break-word;
   font-size: 1.28rem;
   line-height: 1.9;
   font-family: var(--practice-en-font, var(--font-body));

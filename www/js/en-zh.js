@@ -15,4 +15,4 @@ export {
   probeLocalModelReady,
   bindTranslateEngineUi,
   syncTranslateEngineUi,
-} from "./translate-engine.js?v=20261010font4";
+} from "./translate-engine.js?v=20261011nowrap1";
