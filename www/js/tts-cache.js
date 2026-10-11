@@ -10,6 +10,14 @@ let persistPromise = null;
 const inflight = new Map();
 
 function cacheEndpoints() {
+  // 桌面 Electron 版才会有本机磁盘缓存读写需求，
+  // 网页版（包括 iPhone Capacitor）跳过 HTTP 端点，只走 indexedDB / 原生文件
+  try {
+    const isElectron = typeof navigator !== "undefined" &&
+      /electron/i.test(navigator.userAgent || "") ||
+      (typeof window !== "undefined" && window.process?.versions?.electron);
+    if (!isElectron) return [];
+  } catch (_) {}
   const targets = [];
   try {
     if (location.protocol === "http:" || location.protocol === "https:") {
@@ -270,13 +278,19 @@ export function loadSpeechBlob(text, synthesize, opts = {}) {
       return file;
     }
     emit({ phase: "loading", ratio: 0 });
-    const blob = await synthesize((p) => {
-      const ratio = p && Number.isFinite(p.ratio) ? Math.max(0, Math.min(1, p.ratio)) : null;
-      emit({ phase: "loading", ratio });
-    });
+    let blob = null;
+    try {
+      blob = await synthesize((p) => {
+        const ratio = p && Number.isFinite(p.ratio) ? Math.max(0, Math.min(1, p.ratio)) : null;
+        emit({ phase: "loading", ratio });
+      });
+    } catch (_) {
+      // 直连微软 TTS 和 HTTP 代理链都失败时静默返回 null，交给调用方 fallback
+      return null;
+    }
     if (blob instanceof Blob && blob.size) {
       emit({ phase: "saving", ratio: 1 });
-      await archiveSpeechClip(key, blob).catch((err) => console.warn(err));
+      await archiveSpeechClip(key, blob).catch(() => {});
       emit({ phase: "done", ratio: 1 });
     }
     return blob || null;

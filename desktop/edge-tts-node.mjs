@@ -294,7 +294,8 @@ function listen(port) {
       const text = new URL(req.url || "/", "http://127.0.0.1").searchParams.get("text") || "";
       const audio = readClipFile(text);
       if (!audio) {
-        res.writeHead(404);
+        // 用 204 代替 404：Chromium 把 404 标成红色 ERR_ABORTED，204 是静默的「无内容」
+        res.writeHead(204);
         res.end();
         return;
       }
