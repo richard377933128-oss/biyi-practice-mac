@@ -76,6 +76,36 @@ export async function batchDownloadSpeech({
   if (!targets.length) { clearInterval(stopPoll); return { ok: 0, fail: 0, skip: 0 }; }
 
   const totalOps = targets.length;
+  const synthFn = IS_IOS_CAPACITOR ? synthesizeEdgeSpeech : synthesizeHttp;
+
+  /** 合成单段文本（带 3 次重试），返回 Blob | null */
+  async function trySynthOne(text) {
+    const key = voiceCacheKey(text, voice);
+    // 预检缓存
+    const cached = await readSpeechClip(key);
+    if (cached) return { blob: cached, from: "cache" };
+    let blob = null;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      if (checkStop()) return { blob: null, from: null };
+      try {
+        blob = await throttle(() => {
+          if (checkStop()) return Promise.reject(new DOMException("cancelled", "AbortError"));
+          return loadSpeechBlob(
+            key,
+            () => synthFn(text, ctrl.signal, undefined, voice),
+          );
+        });
+        if (blob) break;
+      } catch (err) {
+        if (err?.name === "AbortError") return { blob: null, from: null };
+      }
+      if (attempt < 2) await new Promise((r) => setTimeout(r, 400));
+    }
+    return blob ? { blob, from: "synth" } : { blob: null, from: null };
+  }
+
+  // 第一轮：遍历所有题目，收集失败的
+  const failedTexts = [];
 
   async function oneItem({ q, num }, i) {
     if (checkStop()) return;
@@ -85,55 +115,49 @@ export async function batchDownloadSpeech({
       onProgress?.({ current: i + 1, total: totalOps, num, ok, fail, skip, phase: "empty" });
       return;
     }
-    let itemOk = 0, itemFail = 0, itemSkip = 0;
     for (const text of texts) {
       if (checkStop()) return;
-      // 预检缓存：已存在直接跳过，不进 throttle 队列
-      const key = voiceCacheKey(text, voice);
-      const cached = await readSpeechClip(key);
-      if (cached) { itemSkip += 1; continue; }
-      let blob = null;
-      const synthFn = IS_IOS_CAPACITOR ? synthesizeEdgeSpeech : synthesizeHttp;
-      for (let attempt = 0; attempt < 3; attempt += 1) {
-        if (checkStop()) return;
-        try {
-          blob = await throttle(() => {
-            if (checkStop()) return Promise.reject(new DOMException("cancelled", "AbortError"));
-            return loadSpeechBlob(
-              key,
-              () => synthFn(text, ctrl.signal, undefined, voice),
-            );
-          });
-          if (blob) break;
-        } catch (err) {
-          if (err?.name === "AbortError") return;
-        }
-        if (attempt < 2) await new Promise((r) => setTimeout(r, 400));
-      }
-      if (blob) itemOk += 1;
-      else itemFail += 1;
+      const { blob, from } = await trySynthOne(text);
+      if (from === "cache") skip += 1;
+      else if (blob) ok += 1;
+      else { fail += 1; failedTexts.push({ text, num }); }
     }
-    ok += itemOk;
-    fail += itemFail;
-    skip += itemSkip;
     onProgress?.({
-      current: i + 1,
-      total: totalOps,
-      num,
-      ok,
-      fail,
-      skip,
-      phase: "item",
+      current: i + 1, total: totalOps, num, ok, fail, skip, phase: "item",
     });
   }
 
   onProgress?.({ current: 0, total: totalOps, num: start, ok: 0, fail: 0, skip: 0, phase: "start" });
   await Promise.allSettled(targets.map((t, i) => oneItem(t, i)));
-  clearInterval(stopPoll);
-  if (ctrl.signal.aborted) {
-    // 用户取消：隐藏徽章并静默退出，不走 done phase
-    return { ok, fail, skip, cancelled: true };
+  if (ctrl.signal.aborted) { clearInterval(stopPoll); return { ok, fail, skip, cancelled: true }; }
+
+  // 第二轮：统一重试所有失败的
+  if (failedTexts.length) {
+    onProgress?.({
+      current: totalOps, total: totalOps, num: end, ok, fail, skip,
+      phase: "retry", retryTotal: failedTexts.length, retryDone: 0,
+    });
+    // 给网络一个喘息
+    await new Promise((r) => setTimeout(r, 800));
+    let retryDone = 0;
+    const stillFailed = [];
+    for (const { text, num } of failedTexts) {
+      if (checkStop()) break;
+      const { blob, from } = await trySynthOne(text);
+      retryDone += 1;
+      if (from === "cache") { skip += 1; fail -= 1; }
+      else if (blob) { ok += 1; fail -= 1; }
+      else stillFailed.push({ text, num });
+      onProgress?.({
+        current: totalOps, total: totalOps, num, ok, fail, skip,
+        phase: "retry", retryTotal: failedTexts.length, retryDone,
+      });
+    }
+    failedTexts.length = 0;
+    failedTexts.push(...stillFailed);
   }
+
+  clearInterval(stopPoll);
   onProgress?.({ current: totalOps, total: totalOps, num: end, ok, fail, skip, phase: "done" });
   return { ok, fail, skip, cancelled: false };
 }
@@ -191,8 +215,7 @@ export function updateDownloadBadge(info) {
   const bar = el.querySelector("#audio-dl-bar-inner");
   if (!body) return;
   if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
-  const { current, total, num, ok, fail, skip, phase } = info || {};
-  const pct = total ? Math.round((current / total) * 100) : 0;
+  const { current, total, num, ok, fail, skip, phase, retryTotal, retryDone } = info || {};
   if (phase === "done") {
     const parts = [`✅${ok}`];
     if (skip) parts.push(`⏭️${skip}`);
@@ -200,10 +223,14 @@ export function updateDownloadBadge(info) {
     body.textContent = parts.join(" ");
     bar.style.width = "100%";
     hideTimer = setTimeout(hideDownloadBadge, 2000);
+  } else if (phase === "retry") {
+    body.textContent = `🔄 重试 ${retryDone}/${retryTotal} · ❌${fail}`;
+    bar.style.width = `${((current + retryDone) / (total + retryTotal)) * 100}%`;
   } else if (phase === "start") {
     body.textContent = `共 ${total} 题`;
     bar.style.width = "0%";
   } else {
+    const pct = total ? Math.round((current / total) * 100) : 0;
     const parts = [`${pct}%`];
     if (skip) parts.push(`⏭️${skip}`);
     if (fail) parts.push(`❌${fail}`);
