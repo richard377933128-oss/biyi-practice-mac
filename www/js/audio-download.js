@@ -172,11 +172,13 @@ export function showDownloadBadge({ title, onCancel }) {
     document.body.appendChild(el);
   }
   el.hidden = false;
+  el.style.pointerEvents = "auto";
+  const cancelBtn = el.querySelector("#audio-dl-cancel");
   el.querySelector("#audio-dl-title").textContent = title || "后台下载中";
-  el.querySelector("#audio-dl-cancel").onclick = () => {
-    onCancel?.();
-    hideDownloadBadge();
-  };
+  const doCancel = () => { onCancel?.(); hideDownloadBadge(); };
+  cancelBtn.onclick = doCancel;
+  cancelBtn.addEventListener?.("touchstart", (e) => { e.preventDefault(); doCancel(); }, { passive: false });
+  cancelBtn.addEventListener?.("click", doCancel);
   return el;
 }
 
