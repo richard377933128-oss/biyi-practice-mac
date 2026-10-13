@@ -798,10 +798,12 @@ async function refreshAudioReadyIndicatorsNow() {
   const voice = resolvePlayVoice("online", getSavedVoice("online"));
   const sg = Array.isArray(q.sense_groups) ? q.sense_groups : [];
   const senseTexts = sg.map((s) => String(s?.english || "").trim()).filter(Boolean);
+  const fullLineTexts = englishFullSpeakLines();
 
   // 三个板块对应的"要朗读的文本列表"
   const targets = [
-    { id: "btn-en-full-play", texts: [String(q.en || "").trim()].filter(Boolean) },
+    // 全文朗读也是逐句读（enFullLines），检查逐句的缓存，而非整段 q.en
+    { id: "btn-en-full-play", texts: fullLineTexts },
     { id: "btn-sense-play", texts: senseTexts },
   ];
   const cur = sg[state.translation?.idx]?.english;
