@@ -474,7 +474,10 @@ public class AppleSpeechPlugin: CAPPlugin, CAPBridgedPlugin, AVSpeechSynthesizer
     call.keepAlive = true
     pendingCall = call
     let synth = freshMainSynth()
-    for u in utterances { synth.speak(u) }
+    // 只排队第一句开口，确保首句不被 AVSpeechSynthesizer 的调度 bug 跳过；
+    // 剩余句在 didStart 第一句后逐个补上。
+    if let first = utterances.first { synth.speak(first) }
+    NSLog("[Speech] speakQueue: first queued, total=%d, loop=%d", utterances.count, loopQueue ? 1 : 0)
     // 队列开不了口：自愈（重建 + 重排）
     armWatchdog(4.0) { [weak self] in
       guard let self, self.queueMode, self.pendingCall != nil else { return }
@@ -545,7 +548,8 @@ public class AppleSpeechPlugin: CAPPlugin, CAPBridgedPlugin, AVSpeechSynthesizer
     }
     currentUtterances = all
     let start = min(queueIndex, all.count - 1)
-    for u in all[start...] { synth.speak(u) }
+    // 从断点处只 speak 第一句，剩余等 didStart 后补上
+    if start < all.count { synth.speak(all[start]) }
     armWatchdog(4.0) { [weak self] in
       guard let self, self.queueMode, self.pendingCall != nil else { return }
       self.queueSilenceCheck("post-recover")
@@ -811,6 +815,12 @@ public class AppleSpeechPlugin: CAPPlugin, CAPBridgedPlugin, AVSpeechSynthesizer
     queueIndex = idx
     queueRecoveries = 0 // 有进展就清零自愈计数，允许长跑中多次自愈
     NSLog("[Speech] didStart %d/%d", idx + 1, currentUtterances.count)
+    // speakQueue/loop/recover 都只 speak 了当前这一句；didStart 后立刻 speak 剩余的
+    if let synth = synthesizer, currentUtterances.count > idx + 1 {
+      let remaining = currentUtterances.dropFirst(idx + 1)
+      NSLog("[Speech] queue remaining %d utterances", remaining.count)
+      for u in remaining { synth.speak(u) }
+    }
     showNowPlayingLine(utterance.speechString, index: idx + 1, total: currentUtterances.count)
     notifyListeners("queueProgress", data: ["index": idx + 1, "total": currentUtterances.count])
     // 这句读完该来 didFinish；按句长给上限
@@ -844,7 +854,8 @@ public class AppleSpeechPlugin: CAPPlugin, CAPBridgedPlugin, AVSpeechSynthesizer
         NSLog("[Speech] loop round %d", queueRound)
         let utterances = makeQueueUtterances()
         currentUtterances = utterances
-        for u in utterances { synthesizer.speak(u) }
+        // 和 speakQueue 一样：只 speak 第一句，剩余在 didStart 第一句后补上
+        if let first = utterances.first { synthesizer.speak(first) }
         notifyListeners("queueLooped", data: ["round": queueRound])
         armWatchdog(4.0) { [weak self] in
           guard let self, self.queueMode, self.pendingCall != nil else { return }
