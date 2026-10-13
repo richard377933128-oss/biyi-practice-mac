@@ -680,7 +680,7 @@
   <div id="audio-download-dialog" class="app-dialog hidden" role="dialog" aria-modal="true" aria-labelledby="audio-download-title">
     <div class="app-dialog-card">
       <h3 id="audio-download-title">批量下载音频</h3>
-      <p class="app-dialog-desc" id="audio-download-desc">后台静默合成并缓存到本机，断网后也能播放。声音用顶部「音色」设定。</p>
+      <p class="app-dialog-desc" id="audio-download-desc">后台静默合成并缓存到本机，断网后也能播放。声音用顶部「音色」设定。意群顺次播放就是整段。</p>
       <div class="bank-playlist-fields">
         <div class="bank-playlist-range">
           <label class="app-dialog-field" for="audio-download-from">
@@ -692,14 +692,6 @@
             <input id="audio-download-to" type="number" min="1" step="1" inputmode="numeric" autocomplete="off" />
           </label>
         </div>
-        <label class="app-dialog-field" for="audio-download-mode">
-          下载内容
-          <select id="audio-download-mode">
-            <option value="full" selected>仅整段英文</option>
-            <option value="sense">仅意群</option>
-            <option value="both">整段 + 意群</option>
-          </select>
-        </label>
       </div>
       <div class="app-dialog-actions">
         <button type="button" class="btn btn-ghost" id="btn-audio-download-cancel">取消</button>

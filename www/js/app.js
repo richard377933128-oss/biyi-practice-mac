@@ -1946,9 +1946,8 @@ function openAudioDownloadDialog() {
   const dlg = $("#audio-download-dialog");
   const fromEl = $("#audio-download-from");
   const toEl = $("#audio-download-to");
-  const modeEl = $("#audio-download-mode");
   const desc = $("#audio-download-desc");
-  if (!dlg || !fromEl || !toEl || !modeEl) return;
+  if (!dlg || !fromEl || !toEl) return;
 
   const cur = Math.min(Math.max((state.index || 0) + 1, 1), total);
   const prefs = (() => {
@@ -1965,10 +1964,9 @@ function openAudioDownloadDialog() {
   toEl.value = to;
   toEl.min = from;
   toEl.max = total;
-  modeEl.value = prefs.mode || "full";
 
   const bankTitle = state.bankTitle || state.bankCode || "";
-  desc.textContent = `当前：${bankTitle}（共 ${total} 题）。后台静默合成并缓存到本机，断网后也能播放。声音用顶部「音色」设定。`;
+  desc.textContent = `当前：${bankTitle}（共 ${total} 题）。后台静默合成意群音频到本机缓存，断网后也能播放。声音用顶部「音色」设定。`;
 
   dlg.classList.remove("hidden");
   setTimeout(() => fromEl.focus(), 30);
@@ -1984,10 +1982,8 @@ async function confirmAudioDownload() {
   if (!total) { closeAudioDownloadDialog(); return; }
   const fromEl = $("#audio-download-from");
   const toEl = $("#audio-download-to");
-  const modeEl = $("#audio-download-mode");
   let from = Math.floor(Number(fromEl?.value) || 0);
   let to = Math.floor(Number(toEl?.value) || 0);
-  const mode = modeEl?.value || "full";
   if (!from || from < 1) from = 1;
   if (!to || to < from) to = from;
   from = Math.min(from, total);
@@ -1999,7 +1995,7 @@ async function confirmAudioDownload() {
 
   // 保存用户偏好
   try {
-    localStorage.setItem("biyi_audio_dl", JSON.stringify({ from, to, mode }));
+    localStorage.setItem("biyi_audio_dl", JSON.stringify({ from, to }));
   } catch (_) {}
   closeAudioDownloadDialog();
 
@@ -2016,7 +2012,7 @@ async function confirmAudioDownload() {
   audioDownloadAbort = false;
   const voice = getDefaultDownloadVoice();
   showDownloadBadge({
-    title: `下载音频 #${from}–${to}（${mode === "full" ? "整段" : mode === "sense" ? "意群" : "全部"}）`,
+    title: `下载意群音频 #${from}–${to}`,
     onCancel: () => { audioDownloadAbort = true; },
   });
 
@@ -2026,7 +2022,7 @@ async function confirmAudioDownload() {
       start: from,
       end: to,
       voice,
-      mode,
+      mode: "sense",
       onProgress: updateDownloadBadge,
       shouldStop: () => audioDownloadAbort,
     });
