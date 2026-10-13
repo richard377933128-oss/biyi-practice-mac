@@ -1,6 +1,6 @@
 /** 批量后台合成音频：按题目区间静默走 loadSpeechBlob，自动缓存。 */
 
-import { loadSpeechBlob } from "./tts-cache.js?v=20261012dl";
+import { loadSpeechBlob, readSpeechClip } from "./tts-cache.js?v=20261012dl";
 import { synthesizeHttp, synthesizeEdgeSpeech, voiceCacheKey, getSavedVoice } from "./edge-tts.js?v=20261012dl";
 
 /** iPhone / Capacitor 环境检测 */
@@ -85,11 +85,14 @@ export async function batchDownloadSpeech({
       onProgress?.({ current: i + 1, total: totalOps, num, ok, fail, skip, phase: "empty" });
       return;
     }
-    let itemOk = 0, itemFail = 0;
+    let itemOk = 0, itemFail = 0, itemSkip = 0;
     for (const text of texts) {
       if (checkStop()) return;
+      // 预检缓存：已存在直接跳过，不进 throttle 队列
+      const key = voiceCacheKey(text, voice);
+      const cached = await readSpeechClip(key);
+      if (cached) { itemSkip += 1; continue; }
       let blob = null;
-      // iPhone/Capacitor 走 WSS 直连；网页版走 8767 HTTP 代理（更稳定）
       const synthFn = IS_IOS_CAPACITOR ? synthesizeEdgeSpeech : synthesizeHttp;
       for (let attempt = 0; attempt < 3; attempt += 1) {
         if (checkStop()) return;
@@ -97,7 +100,7 @@ export async function batchDownloadSpeech({
           blob = await throttle(() => {
             if (checkStop()) return Promise.reject(new DOMException("cancelled", "AbortError"));
             return loadSpeechBlob(
-              voiceCacheKey(text, voice),
+              key,
               () => synthFn(text, ctrl.signal, undefined, voice),
             );
           });
@@ -105,7 +108,6 @@ export async function batchDownloadSpeech({
         } catch (err) {
           if (err?.name === "AbortError") return;
         }
-        // 短暂退避后重试
         if (attempt < 2) await new Promise((r) => setTimeout(r, 400));
       }
       if (blob) itemOk += 1;
@@ -113,6 +115,7 @@ export async function batchDownloadSpeech({
     }
     ok += itemOk;
     fail += itemFail;
+    skip += itemSkip;
     onProgress?.({
       current: i + 1,
       total: totalOps,
@@ -191,14 +194,20 @@ export function updateDownloadBadge(info) {
   const { current, total, num, ok, fail, skip, phase } = info || {};
   const pct = total ? Math.round((current / total) * 100) : 0;
   if (phase === "done") {
-    body.textContent = `✅${ok} ❌${fail}`;
+    const parts = [`✅${ok}`];
+    if (skip) parts.push(`⏭️${skip}`);
+    if (fail) parts.push(`❌${fail}`);
+    body.textContent = parts.join(" ");
     bar.style.width = "100%";
     hideTimer = setTimeout(hideDownloadBadge, 2000);
   } else if (phase === "start") {
     body.textContent = `共 ${total} 题`;
     bar.style.width = "0%";
   } else {
-    body.textContent = `${pct}% · ✅${ok} ❌${fail}`;
+    const parts = [`${pct}%`];
+    if (skip) parts.push(`⏭️${skip}`);
+    if (fail) parts.push(`❌${fail}`);
+    body.textContent = parts.join(" · ");
     bar.style.width = `${pct}%`;
   }
 }
