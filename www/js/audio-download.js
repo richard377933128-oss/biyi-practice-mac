@@ -144,7 +144,10 @@ function collectTexts(q, mode) {
 }
 
 /** 显示一个小的可关闭进度徽章 */
+let hideTimer = null;
+
 export function showDownloadBadge({ title, onCancel }) {
+  if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
   let el = document.getElementById("audio-dl-badge");
   if (!el) {
     el = document.createElement("div");
@@ -182,10 +185,13 @@ export function updateDownloadBadge(info) {
   if (!el) return;
   const body = el.querySelector("#audio-dl-body");
   if (!body) return;
+  // 状态变化时清掉之前的收起定时器
+  if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
   const { current, total, num, ok, fail, skip, phase } = info || {};
   const pct = total ? Math.round((current / total) * 100) : 0;
   if (phase === "done") {
     body.textContent = `✅ 完成：合成 ${ok}，失败 ${fail}${skip ? `，跳过 ${skip}` : ""}`;
+    hideTimer = setTimeout(hideDownloadBadge, 1400);
   } else if (phase === "start") {
     body.textContent = `准备中…共 ${total} 题`;
   } else {
@@ -194,6 +200,7 @@ export function updateDownloadBadge(info) {
 }
 
 export function hideDownloadBadge() {
+  if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
   const el = document.getElementById("audio-dl-badge");
   if (el) el.hidden = true;
 }
