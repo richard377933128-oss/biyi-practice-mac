@@ -1141,7 +1141,15 @@ function createSenseTtsProgress(chip) {
   };
 }
 
+// 单词朗读 debounce：快速连点合并为最后一次，避免 AVSpeechSynthesizer 在频繁 stop→speak 下假死
+let speakEnWordDebounceTimer = 0;
+
 async function speakEnFullWord(word, el) {
+  clearTimeout(speakEnWordDebounceTimer);
+  speakEnWordDebounceTimer = setTimeout(() => { speakEnFullWordNow(word, el); }, 250);
+}
+
+async function speakEnFullWordNow(word, el) {
   const w = String(word || "").trim();
   if (!w) return;
   const playing = isEnFullPlaying() || isSensePlaying();
@@ -1188,12 +1196,11 @@ async function speakEnFullWord(word, el) {
 
   try {
     await enFullSpeech.unlockAudio?.();
-    if (playing) {
-      await Promise.all([enFullSpeech.speakAside(w, { hold: true, voice: currentFullLineVoice() }), dictPromise]);
-      resumeEnFullAfterAside(wasPaused);
-    } else {
-      await Promise.all([enFullSpeech.speakOnce(w), dictPromise]);
-    }
+    // 始终走 speakAside（旁路合成器），无论主合成器是否在播：
+    // - 旁路合成器独立，不会触发 haltAudio() → cancelAll() → stopSpeaking(.immediate) 的 thrash
+    // - 主合成器空闲时 aside 直接播，忙时自动 pausePlayback() 读完后恢复
+    await Promise.all([enFullSpeech.speakAside(w, { hold: true, voice: currentFullLineVoice() }), dictPromise]);
+    if (playing) resumeEnFullAfterAside(wasPaused);
   } catch (err) {
     console.warn(err);
     toast("单词朗读失败");
