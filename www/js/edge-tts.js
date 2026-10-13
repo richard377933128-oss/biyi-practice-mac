@@ -194,7 +194,7 @@ function parseAudioFrame(buffer) {
   return new Uint8Array(buffer, 2 + headerLen);
 }
 
-async function synthesizeHttp(text, signal, onProgress, voice) {
+export async function synthesizeHttp(text, signal, onProgress, voice) {
   const targets = [];
   if (location.protocol === "http:" || location.protocol === "https:") targets.push(`${location.origin}/tts`);
   if (!targets.includes("http://127.0.0.1:8767/tts")) targets.push("http://127.0.0.1:8767/tts");

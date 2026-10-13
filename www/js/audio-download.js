@@ -1,7 +1,7 @@
 /** 批量后台合成音频：按题目区间静默走 loadSpeechBlob，自动缓存。 */
 
 import { loadSpeechBlob } from "./tts-cache.js?v=20261012dl";
-import { synthesizeEdgeSpeech, voiceCacheKey, getSavedVoice } from "./edge-tts.js?v=20261012dl";
+import { synthesizeHttp, voiceCacheKey, getSavedVoice } from "./edge-tts.js?v=20261012dl";
 
 /** 简单并发闸门 */
 function limitConcurrent(max) {
@@ -82,7 +82,7 @@ export async function batchDownloadSpeech({
         const blob = await throttle(() =>
           loadSpeechBlob(
             voiceCacheKey(text, voice),
-            () => synthesizeEdgeSpeech(text, undefined, undefined, voice),
+            () => synthesizeHttp(text, undefined, undefined, voice),
           ),
         );
         if (blob) itemOk += 1;
