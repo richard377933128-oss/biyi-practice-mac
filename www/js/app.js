@@ -2092,6 +2092,11 @@ async function confirmAudioDownload() {
     } else {
       updateDownloadBadge({ current: to - from + 1, total: to - from + 1, ok: result.ok, fail: result.fail, skip: result.skip, phase: "done" });
       setTimeout(hideDownloadBadge, 1400);
+      // 下载完立刻刷新所有三个板块的音频就绪标记
+      refreshAudioReadyIndicators();
+      // 合成可能在写入 nativeFS 上稍慢，再补刷几次
+      setTimeout(refreshAudioReadyIndicators, 1500);
+      setTimeout(refreshAudioReadyIndicators, 3500);
     }
   } catch (err) {
     hideDownloadBadge();
@@ -3968,6 +3973,7 @@ async function boot() {
   window.addEventListener("pagehide", onLeave);
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "hidden") onLeave();
+    else refreshAudioReadyIndicators();
   });
 }
 
