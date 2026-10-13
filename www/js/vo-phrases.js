@@ -698,7 +698,7 @@ export function extractVerbsFromUnits(units, posMap) {
 export async function extractVerbsFromText(text) {
   const en = String(text || "").trim();
   if (!en) return [];
-  const { lookupEnWordsPos } = await import("./en-word-dict.js?v=20261011caret1");
+  const { lookupEnWordsPos } = await import("./en-word-dict.js?v=20261012dl");
   const words = [];
   for (const tk of tokenizeText(en)) if (tk.type === "word") words.push(tk.lower);
   const posMap = await lookupEnWordsPos(words);
@@ -713,7 +713,7 @@ export async function extractVerbsFromText(text) {
 export async function extractVoFromText(text) {
   const en = String(text || "").trim();
   if (!en) return [];
-  const { lookupEnWordsPos } = await import("./en-word-dict.js?v=20261011caret1");
+  const { lookupEnWordsPos } = await import("./en-word-dict.js?v=20261012dl");
   const words = [];
   for (const tk of tokenizeText(en)) if (tk.type === "word") words.push(tk.lower);
   const posMap = await lookupEnWordsPos(words);

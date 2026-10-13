@@ -1,7 +1,7 @@
 
-import { bindEnglishInputOnFocus } from "./ime-english.js?v=20261011caret1";
-import { createEdgeSpeech } from "./edge-tts.js?v=20261011caret1";
-import { annotateEnTapStress } from "./en-word-dict.js?v=20261011caret1";
+import { bindEnglishInputOnFocus } from "./ime-english.js?v=20261012dl";
+import { createEdgeSpeech } from "./edge-tts.js?v=20261012dl";
+import { annotateEnTapStress } from "./en-word-dict.js?v=20261012dl";
 
 export function createTranslation({ state, $, toast, saveTranslationMemory, renderQuestion, syncDictationUI, setDictationOn, setPassageFocusOn, persistCurrentDictation, passageMarkKey, currentQuestion, ensureSenseGroupsVisible, clampDictationTyped, autoAppendDictationExtras, isDictationAutoWord, normalizeDictationText, sameDictationChar, dictationCharLabel, dictationErrorHint, moveQuestion }) {
   const speech = createEdgeSpeech();

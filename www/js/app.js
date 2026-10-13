@@ -1,9 +1,10 @@
-import "./error-trap.js?v=20261011caret1"; // 全局错误兜底，必须第一个 import
-import { initKvStore } from "./lib/kv-store.js?v=20261011caret1";
-import { createTranslation } from "./translation.js?v=20261011caret1";
+import "./error-trap.js?v=20261012dl"; // 全局错误兜底，必须第一个 import
+import { initKvStore } from "./lib/kv-store.js?v=20261012dl";
+import { createTranslation } from "./translation.js?v=20261012dl";
 // screen-record.js / system-camera.js 合计约 3700 行，启动时动态加载（见 boot() 末尾）
-import { createEdgeSpeech, getTtsEngine, setTtsEngine, getSavedVoice, setSavedVoice, ROTATE_VOICE, isRotateVoice, rotateVoiceAt, peekRotateVoice } from "./edge-tts.js?v=20261011caret1";
-import { isLockStressOn, setLockStressOn } from "./lock-screen.js?v=20261011caret1";
+import { createEdgeSpeech, getTtsEngine, setTtsEngine, getSavedVoice, setSavedVoice, ROTATE_VOICE, isRotateVoice, rotateVoiceAt, peekRotateVoice } from "./edge-tts.js?v=20261012dl";
+import { isLockStressOn, setLockStressOn } from "./lock-screen.js?v=20261012dl";
+import { batchDownloadSpeech, showDownloadBadge, updateDownloadBadge, hideDownloadBadge, getDefaultDownloadVoice } from "./audio-download.js?v=20261012dl";
 import {
   CUSTOM_BANK_CODE,
   CUSTOM_ADD_CODE,
@@ -21,13 +22,13 @@ import {
   parseImportText,
   readSrtFile,
   titleFromSrtFileName,
-} from "./custom-texts.js?v=20261011caret1";
+} from "./custom-texts.js?v=20261012dl";
 import {
   translateZhToEn,
   bindTranslateEngineUi,
   loadTranslatePrefs,
   polishAndTranslateZhLinesViaDeepSeek,
-} from "./en-zh.js?v=20261011caret1";
+} from "./en-zh.js?v=20261012dl";
 import {
   lookupEnWord,
   showEnWordTip,
@@ -39,9 +40,9 @@ import {
   applyStressToWordEl,
   markStressOnWord,
   formatPhonetic,
-} from "./en-word-dict.js?v=20261011caret1";
-import { addWord, hasWord, bindWordbook } from "./wordbook.js?v=20261011caret1";
-import { extractVoFromText, extractVerbsFromText } from "./vo-phrases.js?v=20261011caret1";
+} from "./en-word-dict.js?v=20261012dl";
+import { addWord, hasWord, bindWordbook } from "./wordbook.js?v=20261012dl";
+import { extractVoFromText, extractVerbsFromText } from "./vo-phrases.js?v=20261012dl";
 import {
   clampDictationTyped,
   autoAppendDictationExtras,
@@ -1818,6 +1819,7 @@ let bankPlaylistToken = 0;
 let bankPlaylistActive = false;
 let bankPlaylistPaused = false;
 let bankPlaylistProgress = ""; // 如 "2/10"
+let audioDownloadAbort = false;
 let bankPlaylistLastClick = 0;
 
 function englishLinesForQuestion(q) {
@@ -1933,6 +1935,107 @@ function writeBankPlaylistPrefs(prefs) {
   try {
     localStorage.setItem(BANK_PLAYLIST_PREF_KEY, JSON.stringify(prefs || {}));
   } catch (_) {}
+}
+
+function openAudioDownloadDialog() {
+  const total = state.list?.length || 0;
+  if (!total) {
+    toast("当前题型没有题目");
+    return;
+  }
+  const dlg = $("#audio-download-dialog");
+  const fromEl = $("#audio-download-from");
+  const toEl = $("#audio-download-to");
+  const modeEl = $("#audio-download-mode");
+  const desc = $("#audio-download-desc");
+  if (!dlg || !fromEl || !toEl || !modeEl) return;
+
+  const cur = Math.min(Math.max((state.index || 0) + 1, 1), total);
+  const prefs = (() => {
+    try { return JSON.parse(localStorage.getItem("biyi_audio_dl") || "{}"); } catch (_) { return {}; }
+  })();
+  let from = Math.floor(Number(prefs.from) || cur);
+  let to = Math.floor(Number(prefs.to) || Math.min(total, cur + 9));
+  from = Math.min(Math.max(from, 1), total);
+  to = Math.min(Math.max(to, from), total);
+
+  fromEl.value = from;
+  fromEl.min = 1;
+  fromEl.max = total;
+  toEl.value = to;
+  toEl.min = from;
+  toEl.max = total;
+  modeEl.value = prefs.mode || "full";
+
+  const bankTitle = state.bankTitle || state.bankCode || "";
+  desc.textContent = `当前：${bankTitle}（共 ${total} 题）。后台静默合成并缓存到本机，断网后也能播放。声音用顶部「音色」设定。`;
+
+  dlg.classList.remove("hidden");
+  setTimeout(() => fromEl.focus(), 30);
+}
+
+function closeAudioDownloadDialog() {
+  const dlg = $("#audio-download-dialog");
+  dlg?.classList.add("hidden");
+}
+
+async function confirmAudioDownload() {
+  const total = state.list?.length || 0;
+  if (!total) { closeAudioDownloadDialog(); return; }
+  const fromEl = $("#audio-download-from");
+  const toEl = $("#audio-download-to");
+  const modeEl = $("#audio-download-mode");
+  let from = Math.floor(Number(fromEl?.value) || 0);
+  let to = Math.floor(Number(toEl?.value) || 0);
+  const mode = modeEl?.value || "full";
+  if (!from || from < 1) from = 1;
+  if (!to || to < from) to = from;
+  from = Math.min(from, total);
+  to = Math.min(to, total);
+  if (to - from + 1 > 500) {
+    toast("单次最多 500 题，分批下");
+    return;
+  }
+
+  // 保存用户偏好
+  try {
+    localStorage.setItem("biyi_audio_dl", JSON.stringify({ from, to, mode }));
+  } catch (_) {}
+  closeAudioDownloadDialog();
+
+  // 加载完整题目数据
+  let questions;
+  try {
+    questions = await loadBankQuestions(state.bankCode);
+  } catch (err) {
+    toast("加载题目失败：" + (err?.message || err));
+    return;
+  }
+  if (!questions?.length) { toast("没有题目数据"); return; }
+
+  audioDownloadAbort = false;
+  const voice = getDefaultDownloadVoice();
+  showDownloadBadge({
+    title: `下载音频 #${from}–${to}（${mode === "full" ? "整段" : mode === "sense" ? "意群" : "全部"}）`,
+    onCancel: () => { audioDownloadAbort = true; },
+  });
+
+  try {
+    const result = await batchDownloadSpeech({
+      questions,
+      start: from,
+      end: to,
+      voice,
+      mode,
+      onProgress: updateDownloadBadge,
+      shouldStop: () => audioDownloadAbort,
+    });
+    updateDownloadBadge({ current: to - from + 1, total: to - from + 1, ok: result.ok, fail: result.fail, skip: result.skip, phase: "done" });
+    setTimeout(hideDownloadBadge, 3500);
+  } catch (err) {
+    hideDownloadBadge();
+    toast("下载出错：" + (err?.message || err));
+  }
 }
 
 function openBankPlaylistDialog() {
@@ -2137,6 +2240,15 @@ function bindFullTextUi() {
         e.preventDefault();
         closeBankPlaylistDialog();
       }
+    });
+  }
+  $("#btn-audio-download")?.addEventListener("click", () => openAudioDownloadDialog());
+  $("#btn-audio-download-cancel")?.addEventListener("click", () => closeAudioDownloadDialog());
+  $("#btn-audio-download-confirm")?.addEventListener("click", () => confirmAudioDownload());
+  for (const id of ["audio-download-from", "audio-download-to"]) {
+    $(`#${id}`)?.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); confirmAudioDownload(); }
+      else if (e.key === "Escape") { e.preventDefault(); closeAudioDownloadDialog(); }
     });
   }
   $("#btn-read-voice-cancel")?.addEventListener("click", () => closeReadVoiceDialog());
@@ -3674,8 +3786,8 @@ async function boot() {
   const idle = window.requestIdleCallback || ((fn) => setTimeout(fn, 300));
   idle(() => {
     Promise.all([
-      import("./screen-record.js?v=20261011caret1"),
-      import("./system-camera.js?v=20261011caret1"),
+      import("./screen-record.js?v=20261012dl"),
+      import("./system-camera.js?v=20261012dl"),
     ])
       .then(([sr, sc]) => {
         sr.createScreenRecord({ $, toast });
