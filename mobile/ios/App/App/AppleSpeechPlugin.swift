@@ -816,10 +816,10 @@ public class AppleSpeechPlugin: CAPPlugin, CAPBridgedPlugin, AVSpeechSynthesizer
     queueRecoveries = 0 // 有进展就清零自愈计数，允许长跑中多次自愈
     NSLog("[Speech] didStart %d/%d", idx + 1, currentUtterances.count)
     // speakQueue/loop/recover 都只 speak 了当前这一句；didStart 后立刻 speak 剩余的
-    if let synth = synthesizer, currentUtterances.count > idx + 1 {
+    if currentUtterances.count > idx + 1 {
       let remaining = currentUtterances.dropFirst(idx + 1)
       NSLog("[Speech] queue remaining %d utterances", remaining.count)
-      for u in remaining { synth.speak(u) }
+      for u in remaining { synthesizer.speak(u) }
     }
     showNowPlayingLine(utterance.speechString, index: idx + 1, total: currentUtterances.count)
     notifyListeners("queueProgress", data: ["index": idx + 1, "total": currentUtterances.count])
