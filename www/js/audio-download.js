@@ -82,20 +82,26 @@ export async function batchDownloadSpeech({
     let itemOk = 0, itemFail = 0;
     for (const text of texts) {
       if (checkStop()) return;
-      try {
-        const blob = await throttle(() => {
-          if (checkStop()) return Promise.reject(new DOMException("cancelled", "AbortError"));
-          return loadSpeechBlob(
-            voiceCacheKey(text, voice),
-            () => synthesizeHttp(text, ctrl.signal, undefined, voice),
-          );
-        });
-        if (blob) itemOk += 1;
-        else itemFail += 1;
-      } catch (err) {
-        if (err?.name === "AbortError") return;
-        itemFail += 1;
+      let blob = null;
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        if (checkStop()) return;
+        try {
+          blob = await throttle(() => {
+            if (checkStop()) return Promise.reject(new DOMException("cancelled", "AbortError"));
+            return loadSpeechBlob(
+              voiceCacheKey(text, voice),
+              () => synthesizeHttp(text, ctrl.signal, undefined, voice),
+            );
+          });
+          if (blob) break;
+        } catch (err) {
+          if (err?.name === "AbortError") return;
+        }
+        // 短暂退避后重试
+        if (attempt < 2) await new Promise((r) => setTimeout(r, 400));
       }
+      if (blob) itemOk += 1;
+      else itemFail += 1;
     }
     ok += itemOk;
     fail += itemFail;
