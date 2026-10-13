@@ -2519,3 +2519,90 @@ body.zh-first .en-full-pair .en-full-zh { order: 1; margin-top: 0; }
   opacity: 0.85;
   color: var(--accent-2, #0f766e);
 }
+
+/* ── 批量下载进度卡片 ── */
+#audio-dl-badge {
+  position: fixed;
+  left: 16px;
+  right: 16px;
+  bottom: 20px;
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  color: #1a1a1a;
+  border-radius: 16px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.08);
+  z-index: 9999;
+  font-size: 14px;
+  font-family: -apple-system, system-ui, sans-serif;
+  padding: 14px 16px;
+  transform: translateY(120%);
+  transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#audio-dl-badge .audio-dl-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+#audio-dl-badge .audio-dl-dot {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #34c759, #30d158);
+  flex-shrink: 0;
+}
+
+#audio-dl-title {
+  font-weight: 600;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#audio-dl-cancel {
+  font-size: 11px;
+  color: #fff;
+  background: #ff3b30;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: none;
+  flex-shrink: 0;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#audio-dl-badge .audio-dl-progress-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+#audio-dl-bar {
+  flex: 1;
+  height: 4px;
+  background: #e5e5ea;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+#audio-dl-bar-inner {
+  height: 100%;
+  background: linear-gradient(90deg, #34c759, #30d158);
+  border-radius: 2px;
+  width: 0%;
+  transition: width 0.25s ease;
+}
+
+#audio-dl-body {
+  font-size: 12px;
+  color: #636366;
+  flex-shrink: 0;
+  min-width: 60px;
+  text-align: right;
+}
