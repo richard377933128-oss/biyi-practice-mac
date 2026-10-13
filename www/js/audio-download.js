@@ -151,56 +151,65 @@ function collectTexts(q, mode) {
   return out;
 }
 
-/** 显示一个小的可关闭进度徽章（DOM 已在 index.html 静态写好） */
+/** 顶部进度条：点任意位置 = 取消（不用单独按钮，Capacitor iOS 最可靠） */
 let hideTimer = null;
 let boundOnCancel = null;
 
-function ensureBadgeListeners() {
-  // 只绑定一次：静态 DOM 元素，原生 addEventListener，Capacitor iOS 可靠
-  const btn = document.getElementById("audio-dl-cancel");
-  if (btn && !btn.__bound) {
-    const fire = () => {
-      boundOnCancel?.();
-      hideDownloadBadge();
-    };
-    btn.addEventListener("click", fire);
-    btn.addEventListener("touchstart", (e) => { e.preventDefault(); fire(); }, { passive: false });
-    btn.__bound = true;
-  }
+function ensureBadgeListener() {
+  const el = document.getElementById("audio-dl-badge");
+  if (!el || el.__bound) return;
+  const fire = (e) => {
+    e?.preventDefault?.();
+    boundOnCancel?.();
+    hideDownloadBadge();
+  };
+  el.addEventListener("click", fire);
+  el.addEventListener("touchstart", fire, { passive: false });
+  el.__bound = true;
 }
 
 export function showDownloadBadge({ title, onCancel }) {
   if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
-  ensureBadgeListeners();
+  ensureBadgeListener();
   boundOnCancel = onCancel || null;
   const el = document.getElementById("audio-dl-badge");
   if (!el) return;
-  el.hidden = false;
-  el.querySelector("#audio-dl-title").textContent = title || "后台下载中";
+  el.style.height = "46px";  // 动画展开
+  el.style.cursor = "pointer";
+  el.setAttribute("aria-hidden", "false");
+  el.querySelector("#audio-dl-title").textContent = (title || "后台下载中") + " · 点此取消";
+  el.querySelector("#audio-dl-body").textContent = "";
+  el.querySelector("#audio-dl-bar").style.width = "0%";
 }
 
 export function updateDownloadBadge(info) {
   const el = document.getElementById("audio-dl-badge");
   if (!el) return;
   const body = el.querySelector("#audio-dl-body");
+  const bar = el.querySelector("#audio-dl-bar");
   if (!body) return;
   if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
   const { current, total, num, ok, fail, skip, phase } = info || {};
   const pct = total ? Math.round((current / total) * 100) : 0;
   if (phase === "done") {
-    body.textContent = `✅ 完成：合成 ${ok}，失败 ${fail}${skip ? `，跳过 ${skip}` : ""}`;
-    hideTimer = setTimeout(hideDownloadBadge, 1400);
+    body.textContent = `✅ 合成 ${ok}，失败 ${fail}${skip ? `，跳过 ${skip}` : ""}`;
+    bar.style.width = "100%";
+    hideTimer = setTimeout(hideDownloadBadge, 1800);
   } else if (phase === "start") {
     body.textContent = `准备中…共 ${total} 题`;
+    bar.style.width = "0%";
   } else {
     body.textContent = `${current}/${total} · ${pct}% · ✅${ok} ❌${fail}`;
+    bar.style.width = `${pct}%`;
   }
 }
 
 export function hideDownloadBadge() {
   if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
   const el = document.getElementById("audio-dl-badge");
-  if (el) el.hidden = true;
+  if (!el) return;
+  el.style.height = "0";
+  el.setAttribute("aria-hidden", "true");
 }
 
 export function getDefaultDownloadVoice() {
