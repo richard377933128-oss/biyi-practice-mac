@@ -2522,7 +2522,7 @@ body.zh-first .en-full-pair .en-full-zh { order: 1; margin-top: 0; }
 
 /* ── 批量下载进度卡片 ── */
 
-/* ── 音频就绪标记：btn 右侧小圆点 ── */
+/* ── 音频就绪标记：btn 右侧符号（色盲友好：空心○/半实心◐/实心●） ── */
 .en-full-play-btn[data-ready],
 .translation-play[data-ready] {
   position: relative;
@@ -2530,28 +2530,29 @@ body.zh-first .en-full-pair .en-full-zh { order: 1; margin-top: 0; }
 }
 .en-full-play-btn[data-ready]::after,
 .translation-play[data-ready]::after {
-  content: "";
   position: absolute;
   right: 6px;
   top: 50%;
   transform: translateY(-50%);
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.9);
-  transition: background 0.2s ease;
+  font-size: 10px;
+  line-height: 1;
+  font-weight: 700;
+  font-family: -apple-system, system-ui, "SF Symbols Text", "Menlo", monospace;
 }
 .en-full-play-btn[data-ready="all"]::after,
 .translation-play[data-ready="all"]::after {
-  background: #30d158; /* Apple 绿 */
+  content: "●";
+  color: #1a1a1a;
 }
 .en-full-play-btn[data-ready="partial"]::after,
 .translation-play[data-ready="partial"]::after {
-  background: #ffcc00; /* Apple 黄 */
+  content: "◐";
+  color: #1a1a1a;
 }
 .en-full-play-btn[data-ready="none"]::after,
 .translation-play[data-ready="none"]::after {
-  background: #c7c7cc; /* Apple 灰 */
+  content: "○";
+  color: #8e8e93;
 }
 #audio-dl-badge {
   position: fixed;
