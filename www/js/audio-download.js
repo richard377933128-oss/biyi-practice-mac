@@ -1,7 +1,13 @@
 /** 批量后台合成音频：按题目区间静默走 loadSpeechBlob，自动缓存。 */
 
 import { loadSpeechBlob } from "./tts-cache.js?v=20261012dl";
-import { synthesizeHttp, voiceCacheKey, getSavedVoice } from "./edge-tts.js?v=20261012dl";
+import { synthesizeHttp, synthesizeEdgeSpeech, voiceCacheKey, getSavedVoice } from "./edge-tts.js?v=20261012dl";
+
+/** iPhone / Capacitor 环境检测 */
+const IS_IOS_CAPACITOR =
+  typeof window !== "undefined" &&
+  (typeof window.Capacitor !== "undefined" ||
+    /iPhone|iPad|iPod/i.test(window.navigator?.userAgent || ""));
 
 /** 简单并发闸门 */
 function limitConcurrent(max) {
@@ -83,6 +89,8 @@ export async function batchDownloadSpeech({
     for (const text of texts) {
       if (checkStop()) return;
       let blob = null;
+      // iPhone/Capacitor 走 WSS 直连；网页版走 8767 HTTP 代理（更稳定）
+      const synthFn = IS_IOS_CAPACITOR ? synthesizeEdgeSpeech : synthesizeHttp;
       for (let attempt = 0; attempt < 3; attempt += 1) {
         if (checkStop()) return;
         try {
@@ -90,7 +98,7 @@ export async function batchDownloadSpeech({
             if (checkStop()) return Promise.reject(new DOMException("cancelled", "AbortError"));
             return loadSpeechBlob(
               voiceCacheKey(text, voice),
-              () => synthesizeHttp(text, ctrl.signal, undefined, voice),
+              () => synthFn(text, ctrl.signal, undefined, voice),
             );
           });
           if (blob) break;
@@ -176,9 +184,10 @@ export function showDownloadBadge({ title, onCancel }) {
   const cancelBtn = el.querySelector("#audio-dl-cancel");
   el.querySelector("#audio-dl-title").textContent = title || "后台下载中";
   const doCancel = () => { onCancel?.(); hideDownloadBadge(); };
+  // 原生 addEventListener（不用可选链），Capacitor iOS 才可靠
   cancelBtn.onclick = doCancel;
-  cancelBtn.addEventListener?.("touchstart", (e) => { e.preventDefault(); doCancel(); }, { passive: false });
-  cancelBtn.addEventListener?.("click", doCancel);
+  cancelBtn.addEventListener("touchstart", (e) => { e.preventDefault(); doCancel(); }, { passive: false });
+  cancelBtn.addEventListener("click", doCancel);
   return el;
 }
 
