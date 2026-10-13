@@ -183,7 +183,7 @@ export function updateDownloadBadge(info) {
   } else if (phase === "start") {
     body.textContent = `准备中…共 ${total} 题`;
   } else {
-    body.textContent = `第 ${num || current}/${total} 题 · ${pct}% · ✅${ok} ❌${fail}`;
+    body.textContent = `${current}/${total} · ${pct}% · ✅${ok} ❌${fail}`;
   }
 }
 
