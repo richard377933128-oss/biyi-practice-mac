@@ -178,21 +178,21 @@ function collectTexts(q, mode) {
   return out;
 }
 
-/** 底部毛玻璃进度卡片：tap 任意位置 = 取消 */
+/** 底部毛玻璃进度卡片：只有「取消」按钮可点击 */
 let hideTimer = null;
 let boundOnCancel = null;
 
 function ensureBadgeListener() {
-  const el = document.getElementById("audio-dl-badge");
-  if (!el || el.__bound) return;
+  const btn = document.getElementById("audio-dl-cancel");
+  if (!btn || btn.__bound) return;
   const fire = (e) => {
     e?.preventDefault?.();
     boundOnCancel?.();
     hideDownloadBadge();
   };
-  el.addEventListener("click", fire);
-  el.addEventListener("touchstart", fire, { passive: false });
-  el.__bound = true;
+  btn.addEventListener("click", fire);
+  btn.addEventListener("touchstart", fire, { passive: false });
+  btn.__bound = true;
 }
 
 export function showDownloadBadge({ title, onCancel }) {

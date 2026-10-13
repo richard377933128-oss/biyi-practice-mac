@@ -736,19 +736,22 @@
 
   <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
 
-  <!-- 下载进度卡片：底部毛玻璃，tap 任意位置 = 取消 -->
+  <!-- 下载进度卡片：底部毛玻璃，只有右侧按钮可取消 -->
   <div id="audio-dl-badge" style="
     position: fixed; left: 16px; right: 16px; bottom: 20px;
     background: rgba(255,255,255,.88); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
     color: #1a1a1a; border-radius: 16px; box-shadow: 0 8px 32px rgba(0,0,0,.12), 0 2px 8px rgba(0,0,0,.08);
     z-index: 9999; font-size: 14px; font-family: -apple-system, system-ui, sans-serif;
     padding: 14px 16px; transform: translateY(120%); transition: transform .35s cubic-bezier(.22,1,.36,1);
-    cursor: pointer; user-select: none; -webkit-tap-highlight-color: transparent;
+    user-select: none; -webkit-tap-highlight-color: transparent;
   " role="status" aria-live="polite">
     <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
       <div style="width:20px;height:20px;border-radius:50%;background:linear-gradient(135deg,#34c759,#30d158);flex-shrink:0;"></div>
       <div id="audio-dl-title" style="font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></div>
-      <div style="font-size:11px;color:#8e8e93;background:#f2f2f7;padding:3px 8px;border-radius:999px;flex-shrink:0;">点我取消</div>
+      <button id="audio-dl-cancel" type="button" style="
+        font-size:11px;color:#fff;background:#ff3b30;padding:3px 10px;border-radius:999px;border:none;
+        flex-shrink:0;cursor:pointer;-webkit-tap-highlight-color:transparent;
+      ">取消</button>
     </div>
     <div style="display:flex; align-items:center; gap:10px;">
       <div id="audio-dl-bar" style="flex:1;height:4px;background:#e5e5ea;border-radius:2px;overflow:hidden;">
