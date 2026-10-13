@@ -45,13 +45,17 @@ export async function batchDownloadSpeech({
   onProgress,
   shouldStop,
 }) {
+  const ctrl = new AbortController();
+  // 外部 shouldStop → 立即 abort 所有正在进行的 HTTP 请求
+  const stopPoll = setInterval(() => {
+    if (shouldStop?.() && !ctrl.signal.aborted) ctrl.abort();
+  }, 80);
+  const checkStop = () => ctrl.signal.aborted;
   const throttle = limitConcurrent(2);
   let ok = 0;
   let fail = 0;
   let skip = 0;
-  const totalRange = Math.max(0, end - start + 1);
 
-  // 按 num 定位索引
   const byNum = new Map();
   questions.forEach((q, idx) => {
     const n = Number(q.num);
@@ -63,12 +67,12 @@ export async function batchDownloadSpeech({
     const found = byNum.get(n);
     if (found) targets.push({ q: found.q, num: n });
   }
-  if (!targets.length) return { ok: 0, fail: 0, skip: 0 };
+  if (!targets.length) { clearInterval(stopPoll); return { ok: 0, fail: 0, skip: 0 }; }
 
   const totalOps = targets.length;
 
   async function oneItem({ q, num }, i) {
-    if (shouldStop?.()) return;
+    if (checkStop()) return;
     const texts = collectTexts(q, mode);
     if (!texts.length) {
       skip += 1;
@@ -77,17 +81,19 @@ export async function batchDownloadSpeech({
     }
     let itemOk = 0, itemFail = 0;
     for (const text of texts) {
-      if (shouldStop?.()) return;
+      if (checkStop()) return;
       try {
-        const blob = await throttle(() =>
-          loadSpeechBlob(
+        const blob = await throttle(() => {
+          if (checkStop()) return Promise.reject(new DOMException("cancelled", "AbortError"));
+          return loadSpeechBlob(
             voiceCacheKey(text, voice),
-            () => synthesizeHttp(text, undefined, undefined, voice),
-          ),
-        );
+            () => synthesizeHttp(text, ctrl.signal, undefined, voice),
+          );
+        });
         if (blob) itemOk += 1;
         else itemFail += 1;
-      } catch (_) {
+      } catch (err) {
+        if (err?.name === "AbortError") return;
         itemFail += 1;
       }
     }
@@ -105,9 +111,14 @@ export async function batchDownloadSpeech({
   }
 
   onProgress?.({ current: 0, total: totalOps, num: start, ok: 0, fail: 0, skip: 0, phase: "start" });
-  await Promise.all(targets.map((t, i) => oneItem(t, i)));
+  await Promise.allSettled(targets.map((t, i) => oneItem(t, i)));
+  clearInterval(stopPoll);
+  if (ctrl.signal.aborted) {
+    // 用户取消：隐藏徽章并静默退出，不走 done phase
+    return { ok, fail, skip, cancelled: true };
+  }
   onProgress?.({ current: totalOps, total: totalOps, num: end, ok, fail, skip, phase: "done" });
-  return { ok, fail, skip };
+  return { ok, fail, skip, cancelled: false };
 }
 
 function collectTexts(q, mode) {

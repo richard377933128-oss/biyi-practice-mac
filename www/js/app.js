@@ -2026,8 +2026,12 @@ async function confirmAudioDownload() {
       onProgress: updateDownloadBadge,
       shouldStop: () => audioDownloadAbort,
     });
-    updateDownloadBadge({ current: to - from + 1, total: to - from + 1, ok: result.ok, fail: result.fail, skip: result.skip, phase: "done" });
-    setTimeout(hideDownloadBadge, 3500);
+    if (result?.cancelled) {
+      hideDownloadBadge();
+    } else {
+      updateDownloadBadge({ current: to - from + 1, total: to - from + 1, ok: result.ok, fail: result.fail, skip: result.skip, phase: "done" });
+      setTimeout(hideDownloadBadge, 1400);
+    }
   } catch (err) {
     hideDownloadBadge();
     toast("下载出错：" + (err?.message || err));
