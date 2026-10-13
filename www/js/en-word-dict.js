@@ -33,8 +33,9 @@ async function fetchText(url, opts) {
 
 async function fetchJsonGz(url) {
   // 服务器（Node static-server）会自动解压 .json.gz 并返回 Content-Type: application/json。
-  // 此时直接 res.json() 即可；只有 iPhone Capacitor 直读 bundle 原始 .gz 时才需要客户端解压。
-  const res = await fetchText(url, { headers: { Range: "bytes=0-" } });
+  // 直接 res.json() 即可；只有 iPhone Capacitor 直读 bundle 原始 .gz 时才需要客户端解压。
+  // 注意：不能带 Range 头——服务器返回 206 + 原始 gzip，客户端 DecompressionStream 在 206 流上 Chromium 会 abort。
+  const res = await fetchText(url);
   const ct = res.headers.get("content-type") || "";
   if (ct.includes("application/json")) {
     return res.json();
