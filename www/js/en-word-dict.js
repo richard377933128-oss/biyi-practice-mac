@@ -26,15 +26,19 @@ function isNativeApp() {
 }
 
 async function fetchText(url, opts) {
-  const res = await fetch(url, Object.assign({ method: "GET", cache: "force-cache" }, opts));
+  const res = await fetch(url, Object.assign({ method: "GET", cache: "no-store" }, opts));
   if (!res.ok) throw new Error(`dict http ${res.status}`);
   return res;
 }
 
 async function fetchJsonGz(url) {
-  // Chromium 会把「嗅探为下载」的 .gz 响应拦成 204 空响应，导致离线词典整片失效。
-  // 带上 Range 头后按分段请求处理即可正常返回（服务器不支持时退回整段 200）。
+  // 服务器（Node static-server）会自动解压 .json.gz 并返回 Content-Type: application/json。
+  // 此时直接 res.json() 即可；只有 iPhone Capacitor 直读 bundle 原始 .gz 时才需要客户端解压。
   const res = await fetchText(url, { headers: { Range: "bytes=0-" } });
+  const ct = res.headers.get("content-type") || "";
+  if (ct.includes("application/json")) {
+    return res.json();
+  }
   if (typeof DecompressionStream === "undefined") {
     throw new Error("gzip unsupported");
   }
