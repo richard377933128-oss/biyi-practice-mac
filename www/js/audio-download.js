@@ -151,44 +151,32 @@ function collectTexts(q, mode) {
   return out;
 }
 
-/** 显示一个小的可关闭进度徽章 */
+/** 显示一个小的可关闭进度徽章（DOM 已在 index.html 静态写好） */
 let hideTimer = null;
+let boundOnCancel = null;
+
+function ensureBadgeListeners() {
+  // 只绑定一次：静态 DOM 元素，原生 addEventListener，Capacitor iOS 可靠
+  const btn = document.getElementById("audio-dl-cancel");
+  if (btn && !btn.__bound) {
+    const fire = () => {
+      boundOnCancel?.();
+      hideDownloadBadge();
+    };
+    btn.addEventListener("click", fire);
+    btn.addEventListener("touchstart", (e) => { e.preventDefault(); fire(); }, { passive: false });
+    btn.__bound = true;
+  }
+}
 
 export function showDownloadBadge({ title, onCancel }) {
   if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
-  let el = document.getElementById("audio-dl-badge");
-  if (!el) {
-    el = document.createElement("div");
-    el.id = "audio-dl-badge";
-    el.style.cssText = `
-      position: fixed; bottom: 18px; right: 18px; z-index: 2147483647;
-      background: #222; color: #fff; padding: 10px 14px; border-radius: 10px;
-      font-size: 13px; box-shadow: 0 6px 20px rgba(0,0,0,.35);
-      display: flex; align-items: center; gap: 10px; min-width: 220px; max-width: 340px;
-      font-family: -apple-system, system-ui, sans-serif;
-    `;
-    el.innerHTML = `
-      <span style="flex:1; line-height:1.4;">
-        <div id="audio-dl-title" style="font-weight:600; margin-bottom:4px;"></div>
-        <div id="audio-dl-body" style="opacity:.85;"></div>
-      </span>
-      <button id="audio-dl-cancel" style="
-        background:#555; color:#fff; border:none; border-radius:6px;
-        padding:4px 10px; font-size:12px; cursor:pointer;
-      ">取消</button>
-    `;
-    document.body.appendChild(el);
-  }
+  ensureBadgeListeners();
+  boundOnCancel = onCancel || null;
+  const el = document.getElementById("audio-dl-badge");
+  if (!el) return;
   el.hidden = false;
-  el.style.pointerEvents = "auto";
-  const cancelBtn = el.querySelector("#audio-dl-cancel");
   el.querySelector("#audio-dl-title").textContent = title || "后台下载中";
-  const doCancel = () => { onCancel?.(); hideDownloadBadge(); };
-  // 原生 addEventListener（不用可选链），Capacitor iOS 才可靠
-  cancelBtn.onclick = doCancel;
-  cancelBtn.addEventListener("touchstart", (e) => { e.preventDefault(); doCancel(); }, { passive: false });
-  cancelBtn.addEventListener("click", doCancel);
-  return el;
 }
 
 export function updateDownloadBadge(info) {
@@ -196,7 +184,6 @@ export function updateDownloadBadge(info) {
   if (!el) return;
   const body = el.querySelector("#audio-dl-body");
   if (!body) return;
-  // 状态变化时清掉之前的收起定时器
   if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
   const { current, total, num, ok, fail, skip, phase } = info || {};
   const pct = total ? Math.round((current / total) * 100) : 0;

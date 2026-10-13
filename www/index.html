@@ -735,6 +735,25 @@
   </div>
 
   <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+
+  <!-- 下载进度徽章：静态写死，确保 Capacitor iOS 上按钮可点 -->
+  <div id="audio-dl-badge" hidden style="
+    position: fixed; bottom: 18px; right: 18px; z-index: 2147483647;
+    background: #222; color: #fff; padding: 10px 14px; border-radius: 10px;
+    font-size: 13px; box-shadow: 0 6px 20px rgba(0,0,0,.35);
+    display: flex; align-items: center; gap: 10px; min-width: 220px; max-width: 340px;
+    font-family: -apple-system, system-ui, sans-serif; pointer-events: auto;
+  ">
+    <span style="flex:1; line-height:1.4;">
+      <div id="audio-dl-title" style="font-weight:600; margin-bottom:4px;"></div>
+      <div id="audio-dl-body" style="opacity:.85;"></div>
+    </span>
+    <button id="audio-dl-cancel" type="button" style="
+      background:#555; color:#fff; border:none; border-radius:6px;
+      padding:4px 10px; font-size:12px; cursor:pointer; position:relative; display:block;
+    ">取消</button>
+  </div>
+
   <script type="module" src="./js/app.js?v=20261012dl"></script>
 </body>
 </html>
