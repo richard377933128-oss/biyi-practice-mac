@@ -1592,6 +1592,7 @@ export function createEdgeSpeech() {
 
     session += 1;
     const mine = session;
+    console.log("[speakLines] apple entry session=", mine, "lines=", list.length, "loop=", !!opts.loop, "opts.title=", opts.title);
     haltAudio();
     keepScreenOn(true);
     const off = Math.max(0, Number(opts.offset) || 0);
@@ -1658,7 +1659,8 @@ export function createEdgeSpeech() {
       pushAppleLock(1);
       // loop=true 时原生在最后一句读完自行重排下一轮（promise 直到停止才 resolve，
       // 避免每轮 stop→重排队的抖动截断下一轮第一句）；否则一轮读完即 resolve
-      return await plugin.speakQueue({
+      console.log("[speakLines] apple calling speakQueue...");
+      const queueResult = await plugin.speakQueue({
         lines: list,
         pauseMs: opts.pauseMs ?? 420,
         rate: 0.92,
@@ -1669,6 +1671,8 @@ export function createEdgeSpeech() {
         voiceIds: Array.isArray(opts.voiceIds) ? opts.voiceIds : [],
         loop: opts.loop === true,
       });
+      console.log("[speakLines] apple speakQueue resolved:", queueResult);
+      return queueResult;
     } finally {
       keepScreenOn(false);
       nativeQueue = false;
