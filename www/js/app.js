@@ -1535,6 +1535,8 @@ function confirmReadVoice() {
     const eng = engine === "apple" ? "apple" : "online";
     setTtsEngine(eng);
     setSavedVoice(id, eng);
+    // 换了音色 → 缓存 key 变了，三个标记立刻重新评估
+    refreshAudioReadyIndicators();
     // 全文朗读、笔译、意群点读共用这个声音
     try {
       document.dispatchEvent(new CustomEvent("biyi-tts-engine", { detail: { engine: eng, voice: id } }));
