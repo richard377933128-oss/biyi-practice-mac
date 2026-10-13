@@ -2,7 +2,8 @@ import "./error-trap.js?v=20261012dl"; // 全局错误兜底，必须第一个 i
 import { initKvStore } from "./lib/kv-store.js?v=20261012dl";
 import { createTranslation } from "./translation.js?v=20261012dl";
 // screen-record.js / system-camera.js 合计约 3700 行，启动时动态加载（见 boot() 末尾）
-import { createEdgeSpeech, getTtsEngine, setTtsEngine, getSavedVoice, setSavedVoice, ROTATE_VOICE, isRotateVoice, rotateVoiceAt, peekRotateVoice } from "./edge-tts.js?v=20261012dl";
+import { createEdgeSpeech, getTtsEngine, setTtsEngine, getSavedVoice, setSavedVoice, ROTATE_VOICE, isRotateVoice, rotateVoiceAt, peekRotateVoice, voiceCacheKey, resolvePlayVoice } from "./edge-tts.js?v=20261013ready";
+import { hasSpeechBlob } from "./tts-cache.js?v=20261013ready";
 import { isLockStressOn, setLockStressOn } from "./lock-screen.js?v=20261012dl";
 import { batchDownloadSpeech, showDownloadBadge, updateDownloadBadge, hideDownloadBadge, getDefaultDownloadVoice } from "./audio-download.js?v=20261012dl";
 import {
@@ -703,7 +704,15 @@ function prefetchSenseAudio() {
       lines.push(t);
     }
     if (!lines.length) return;
-    enFullSpeech.prefetchLines?.(lines, { concurrency: 3, voice: getFullVoice() }).catch(() => {});
+    enFullSpeech.prefetchLines?.(lines, { concurrency: 3, voice: getFullVoice() })
+      .then(() => refreshAudioReadyIndicators())
+      .catch(() => {});
+    // 预取是异步的，预取期间每秒刷一次状态，让绿点逐步出现
+    const tick = setInterval(() => {
+      if (sensePrefetchSeq !== seq) { clearInterval(tick); return; }
+      refreshAudioReadyIndicators();
+    }, 1500);
+    setTimeout(() => clearInterval(tick), 15000);
   }, 1500);
 }
 
@@ -767,6 +776,50 @@ function stripLeadingQuestionNum(name, num) {
   return title.replace(re, "").trim() || title;
 }
 
+/**
+ * 给全文 / 意群 / 笔译三个板块的播放按钮加音频就绪标记：
+ * data-ready="all"（绿点 ● 全部就绪）/ "partial"（黄点 ◐ 部分）/ "none"（灰点 ○ 都没）
+ * 只在 online 引擎（非 apple 本机）下显示，因为 apple 原生朗读不需要预缓存。
+ */
+let audioReadyDebounceTimer = 0;
+function refreshAudioReadyIndicators() {
+  clearTimeout(audioReadyDebounceTimer);
+  audioReadyDebounceTimer = setTimeout(() => refreshAudioReadyIndicatorsNow(), 150);
+}
+async function refreshAudioReadyIndicatorsNow() {
+  const q = state.question;
+  const $ = (id) => document.getElementById(id);
+  if (!q || getTtsEngine() === "apple") {
+    for (const id of ["btn-en-full-play", "btn-sense-play", "btn-translation-play"]) {
+      $(id)?.removeAttribute("data-ready");
+    }
+    return;
+  }
+  const voice = resolvePlayVoice("online", getSavedVoice("online"));
+  const sg = Array.isArray(q.sense_groups) ? q.sense_groups : [];
+  const senseTexts = sg.map((s) => String(s?.english || "").trim()).filter(Boolean);
+
+  // 三个板块对应的"要朗读的文本列表"
+  const targets = [
+    { id: "btn-en-full-play", texts: [String(q.en || "").trim()].filter(Boolean) },
+    { id: "btn-sense-play", texts: senseTexts },
+  ];
+  const cur = sg[state.translation?.idx]?.english;
+  if (cur) targets.push({ id: "btn-translation-play", texts: [String(cur).trim()] });
+
+  for (const { id, texts } of targets) {
+    const btn = $(id);
+    if (!btn || !texts.length) { btn?.removeAttribute("data-ready"); continue; }
+    let ready = 0;
+    for (const t of texts) {
+      const hit = await hasSpeechBlob(voiceCacheKey(t, voice));
+      if (hit) ready += 1;
+    }
+    const ratio = ready / texts.length;
+    btn.dataset.ready = ratio >= 1 ? "all" : ratio > 0 ? "partial" : "none";
+  }
+}
+
 function syncCustomButtons() {
   // 任意文章都可新增；有当前题才显示「编辑当前」
   $("#btn-custom-text-add")?.classList.remove("hidden");
@@ -800,6 +853,7 @@ function renderQuestion() {
   }
   fillEnFullBlock(q);
   syncCustomButtons();
+  refreshAudioReadyIndicators();
 }
 
 function syncNav() {

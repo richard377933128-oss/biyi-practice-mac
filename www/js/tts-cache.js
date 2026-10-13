@@ -228,6 +228,32 @@ export async function archiveSpeechClip(text, blob) {
   return saved;
 }
 
+/** 纯查询：某个 key 的音频是否已在本机缓存（IDB / iPhone 沙盒 / 桌面磁盘）；不触发联网合成 */
+export async function hasSpeechBlob(key) {
+  const k = String(key || "").trim();
+  if (!k) return false;
+  if (inflight.has(k)) return true;
+  if (nativeKnown.has(k)) return true;
+  try {
+    const idb = await idbGet(k);
+    if (idb instanceof Blob && idb.size) return true;
+  } catch (_) {}
+  const FS = nativeFs();
+  if (FS) {
+    try {
+      const stat = await FS.stat({ path: clipFileName(k), directory: "DATA" });
+      if (stat?.size > 0) return true;
+    } catch (_) {}
+  }
+  for (const url of cacheEndpoints()) {
+    try {
+      const res = await fetch(`${url}?text=${encodeURIComponent(k)}&head=1`, { method: "HEAD" });
+      if (res.ok) return true;
+    } catch (_) {}
+  }
+  return false;
+}
+
 /**
  * 先读浏览器库 → iPhone 沙盒文件 → 桌面磁盘缓存，都没有再联网合成。
  * 合成成功后立刻永久落盘（不等播放结束）。

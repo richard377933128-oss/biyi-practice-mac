@@ -2521,6 +2521,38 @@ body.zh-first .en-full-pair .en-full-zh { order: 1; margin-top: 0; }
 }
 
 /* ── 批量下载进度卡片 ── */
+
+/* ── 音频就绪标记：btn 右侧小圆点 ── */
+.en-full-play-btn[data-ready],
+.translation-play[data-ready] {
+  position: relative;
+  padding-right: 18px;
+}
+.en-full-play-btn[data-ready]::after,
+.translation-play[data-ready]::after {
+  content: "";
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.9);
+  transition: background 0.2s ease;
+}
+.en-full-play-btn[data-ready="all"]::after,
+.translation-play[data-ready="all"]::after {
+  background: #30d158; /* Apple 绿 */
+}
+.en-full-play-btn[data-ready="partial"]::after,
+.translation-play[data-ready="partial"]::after {
+  background: #ffcc00; /* Apple 黄 */
+}
+.en-full-play-btn[data-ready="none"]::after,
+.translation-play[data-ready="none"]::after {
+  background: #c7c7cc; /* Apple 灰 */
+}
 #audio-dl-badge {
   position: fixed;
   left: 16px;
