@@ -320,14 +320,19 @@ function synthesizeDirect(text, signal, onProgress, voice) {
       });
       ws.addEventListener("error", () => {
         clearTimeout(timer);
+        console.warn("[synthesizeDirect] ws error");
         fail(new Error("tts failed"));
       });
       ws.addEventListener("close", () => {
         clearTimeout(timer);
-        if (!settled) fail(new Error("closed"));
+        if (!settled) {
+          console.warn("[synthesizeDirect] ws closed before settle");
+          fail(new Error("closed"));
+        }
       });
     }).catch((err) => {
       clearTimeout(timer);
+      console.warn("[synthesizeDirect] secMsGec or setup failed:", err?.message || err);
       fail(err);
     });
   });
@@ -337,6 +342,7 @@ export function synthesizeEdgeSpeech(text, signal, onProgress, voice) {
   return synthesizeDirect(text, signal, onProgress, voice).catch((err) => {
     if (signal?.aborted || err?.name === "AbortError") throw err;
     // 直连失败，改走本机代理；代理也是流式的，同样上报进度
+    console.warn("[synthesizeDirect] failed:", err?.message || err, "→ falling back to HTTP");
     onProgress?.({ ratio: 0 });
     return synthesizeHttp(text, signal, onProgress, voice);
   });
