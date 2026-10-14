@@ -119,6 +119,11 @@ const AudioCtx = typeof window !== "undefined"
 
 function isIosCapacitor() {
   try {
+    // 优先用 scheme 判断（不依赖 Capacitor 初始化）
+    const proto = String(location?.protocol || "").toLowerCase();
+    if (proto === "capacitor:") return true;
+    if (proto === "ionic:") return true;
+    // 兜底用 Capacitor API
     return String(globalThis.Capacitor?.getPlatform?.() || "").toLowerCase() === "ios";
   } catch {
     return false;
@@ -128,11 +133,16 @@ function isIosCapacitor() {
 /** @returns {'online'|'apple'} */
 export function getTtsEngine() {
   try {
-    const v = String(localStorage.getItem(TTS_ENGINE_KEY) || "").trim();
+    let v = String(localStorage.getItem(TTS_ENGINE_KEY) || "").trim();
+    const native = isIosCapacitor();
+    // iPhone 原生 App 强制用联网引擎（Edge WebSocket 直连，不走 Mac）
+    if (native) {
+      v = "online";
+      try { localStorage.setItem(TTS_ENGINE_KEY, "online"); } catch (_) {}
+    }
     if (v === "apple" || v === "online") return v;
   } catch (_) {}
-  // iPhone 默认本机，避免联网 Edge 卡顿
-  return isIosCapacitor() ? "apple" : "online";
+  return "online";
 }
 
 /** @param {'online'|'apple'|string} engine */
@@ -194,9 +204,14 @@ function parseAudioFrame(buffer) {
   return new Uint8Array(buffer, 2 + headerLen);
 }
 
+/** Mac 上跑的 edge-tts-node / static-server 局域网地址，iPhone 通过它走 Mac 的 MacPacket VPN 合成音频 */
+const MAC_TTS_URL = "http://192.168.3.210:8766/tts";
+
 export async function synthesizeHttp(text, signal, onProgress, voice) {
   const targets = [];
+  const isIosApp = typeof window !== "undefined" && window.webkit?.messageHandlers && location.protocol === "capacitor:";
   if (location.protocol === "http:" || location.protocol === "https:") targets.push(`${location.origin}/tts`);
+  if (isIosApp) targets.push(MAC_TTS_URL);
   if (!targets.includes("http://127.0.0.1:8767/tts")) targets.push("http://127.0.0.1:8767/tts");
   let last = new Error("tts failed");
   for (const url of targets) {
@@ -273,6 +288,7 @@ function synthesizeDirect(text, signal, onProgress, voice) {
       fail(new Error("timeout"));
     }, 20000);
     secMsGec().then((gec) => {
+      console.log("[Edge] GEC ok, gec=", gec.slice(0, 16) + "...");
       if (signal?.aborted) {
         clearTimeout(timer);
         fail(new DOMException("aborted", "AbortError"));
@@ -280,10 +296,12 @@ function synthesizeDirect(text, signal, onProgress, voice) {
       }
       const id = crypto.randomUUID().replace(/-/g, "");
       const url = `wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1?TrustedClientToken=${TRUSTED_CLIENT_TOKEN}&ConnectionId=${id}&Sec-MS-GEC=${gec}&Sec-MS-GEC-Version=${GEC_VERSION}`;
+      console.log("[Edge] ws opening...", url.slice(0, 80));
       ws = new WebSocket(url);
       ws.binaryType = "arraybuffer";
       signal?.addEventListener("abort", onAbort, { once: true });
       ws.addEventListener("open", () => {
+        console.log("[Edge] ws OPEN");
         const ts = edgeTimestamp();
         ws.send(
           `X-Timestamp:${ts}\r\nContent-Type:application/json; charset=utf-8\r\nPath:speech.config\r\n\r\n${JSON.stringify({
@@ -299,9 +317,11 @@ function synthesizeDirect(text, signal, onProgress, voice) {
         );
         const req = crypto.randomUUID().replace(/-/g, "");
         ws.send(`X-RequestId:${req}\r\nContent-Type:application/ssml+xml\r\nX-Timestamp:${ts}Z\r\nPath:ssml\r\n\r\n${ssml(spoken, voice)}`);
+        console.log("[Edge] config + ssml sent");
       });
       ws.addEventListener("message", (ev) => {
         if (typeof ev.data === "string") {
+          console.log("[Edge] ws msg:", ev.data.slice(0, 120));
           if (ev.data.includes("Path:turn.end")) {
             clearTimeout(timer);
             try { ws.close(); } catch (_) {}
@@ -314,38 +334,121 @@ function synthesizeDirect(text, signal, onProgress, voice) {
         if (frame?.byteLength) {
           chunks.push(frame);
           received += frame.byteLength;
-          // 总量只能估算：压在 95% 以内，真正完成时再到 100%
           onProgress?.({ ratio: Math.min(0.95, received / estTotal) });
         }
       });
-      ws.addEventListener("error", () => {
+      ws.addEventListener("error", (ev) => {
+        console.error("[Edge] ws ERROR event:", ev);
         clearTimeout(timer);
-        console.warn("[synthesizeDirect] ws error");
-        fail(new Error("tts failed"));
+        fail(new Error("ws error"));
       });
-      ws.addEventListener("close", () => {
+      ws.addEventListener("close", (ev) => {
+        console.error("[Edge] ws CLOSE code=", ev.code, "reason=", ev.reason, "wasClean=", ev.wasClean);
         clearTimeout(timer);
         if (!settled) {
-          console.warn("[synthesizeDirect] ws closed before settle");
-          fail(new Error("closed"));
+          fail(new Error(`closed(${ev.code})`));
         }
       });
     }).catch((err) => {
+      console.error("[Edge] secMsGec fail:", err?.message || err);
       clearTimeout(timer);
-      console.warn("[synthesizeDirect] secMsGec or setup failed:", err?.message || err);
       fail(err);
     });
   });
 }
 
 export function synthesizeEdgeSpeech(text, signal, onProgress, voice) {
+  // iPhone 有 VPN，优先走原生 GoogleTts 插件（URLSession，无 CORS，走系统 VPN）
+  if (isIosCapacitor()) {
+    return synthesizeViaNativeGoogle(text, signal, onProgress, voice).catch((err) => {
+      if (signal?.aborted || err?.name === "AbortError") throw err;
+      console.warn("[native-google] failed:", err?.message || err, "→ trying Edge WS...");
+      return synthesizeDirect(text, signal, onProgress, voice).catch((err2) => {
+        if (signal?.aborted || err2?.name === "AbortError") throw err2;
+        return synthesizeGoogleDirect(text, signal, onProgress, voice).catch((err3) => {
+          if (signal?.aborted || err3?.name === "AbortError") throw err3;
+          return synthesizeHttp(text, signal, onProgress, voice).catch((err4) => {
+            if (signal?.aborted || err4?.name === "AbortError") throw err4;
+            console.warn(`TTS 全链路失败：Native=${err?.message} Edge=${err2?.message} Google=${err3?.message} Proxy=${err4?.message}`);
+            throw err4;
+          });
+        });
+      });
+    });
+  }
   return synthesizeDirect(text, signal, onProgress, voice).catch((err) => {
     if (signal?.aborted || err?.name === "AbortError") throw err;
-    // 直连失败，改走本机代理；代理也是流式的，同样上报进度
-    console.warn("[synthesizeDirect] failed:", err?.message || err, "→ falling back to HTTP");
+    // Edge 直连失败 → 尝试 Google TTS 直连（fetch，可能被 CORS 拦）
+    console.warn("[synthesizeDirect] Edge failed:", err?.message || err, "→ trying Google TTS...");
     onProgress?.({ ratio: 0 });
-    return synthesizeHttp(text, signal, onProgress, voice);
+    return synthesizeGoogleDirect(text, signal, onProgress, voice).catch((err2) => {
+      if (signal?.aborted || err2?.name === "AbortError") throw err2;
+      // Google 也失败 → 走 Mac 代理（局域网桌面用）
+      console.warn("[synthesizeGoogleDirect] failed:", err2?.message || err2, "→ falling back to Mac HTTP proxy");
+      return synthesizeHttp(text, signal, onProgress, voice).catch((err3) => {
+          if (signal?.aborted || err3?.name === "AbortError") throw err3;
+          console.warn(`TTS 全链路失败：Edge=${err?.message} Google=${err2?.message} Proxy=${err3?.message}`);
+          throw err3;
+        });
+    });
   });
+}
+
+/** iPhone 原生 Google TTS：通过 Capacitor bridge 调用原生 URLSession，绕开 CORS，走系统 VPN */
+async function synthesizeViaNativeGoogle(text, signal, onProgress, voice) {
+  const spoken = String(text || "").replace(/\s+/g, " ").trim();
+  if (!spoken) throw new Error("empty");
+  const Cap = globalThis.Capacitor;
+  if (!Cap) throw new Error("no capacitor");
+  let plugin = Cap.Plugins?.GoogleTts;
+  if (!plugin && typeof Cap.registerPlugin === "function") {
+    plugin = Cap.registerPlugin("GoogleTts");
+  }
+  if (!plugin) throw new Error("GoogleTts plugin unavailable");
+  const r = await plugin.synthesize({ text: spoken, voice: voice || "en-US-EmmaMultilingualNeural" });
+  if (!r?.data) throw new Error("native: empty data");
+  const bin = atob(r.data);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  onProgress?.({ ratio: 1 });
+  return new Blob([bytes], { type: r.mime || "audio/mpeg" });
+}
+
+/** Google Translate TTS 直连（fetch GET 简单请求，iPhone 独立可用；但 Google 不返回 ACAO，可能被 CORS 拦） */
+async function synthesizeGoogleDirect(text, signal, onProgress, voice) {
+  const spoken = String(text || "").replace(/\s+/g, " ").trim();
+  if (!spoken) throw new Error("empty");
+  const short = voice?.startsWith("zh")
+    ? voice.split("-").slice(0, 2).join("-")
+    : voice?.split("-")[0] || "en";
+  const url = `https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&q=${encodeURIComponent(spoken)}&tl=${short}&ttsspeed=1`;
+  try {
+    const res = await fetch(url, { signal });
+    if (!res.ok) throw new Error(`google ${res.status}`);
+    let blob;
+    if (res.body?.getReader) {
+      const reader = res.body.getReader();
+      const parts = [];
+      let got = 0;
+      const est = Math.max(6000, spoken.length * 400);
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value?.byteLength) {
+          parts.push(value);
+          got += value.byteLength;
+          onProgress?.({ ratio: Math.min(0.95, got / est) });
+        }
+      }
+      blob = new Blob(parts, { type: res.headers.get("content-type") || "audio/mpeg" });
+    } else {
+      blob = await res.blob();
+    }
+    if (!blob.size) throw new Error("google empty");
+    return blob;
+  } catch (e) {
+    throw e;
+  }
 }
 
 function limitConcurrent(max) {

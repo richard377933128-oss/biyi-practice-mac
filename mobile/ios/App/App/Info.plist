@@ -56,6 +56,11 @@
 	<true/>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+	</dict>
 	<key>NSCameraUsageDescription</key>
 	<string>用于笔译练习时录制跟读视频，方便你本地回看。</string>
 	<key>NSMicrophoneUsageDescription</key>

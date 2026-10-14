@@ -98,6 +98,9 @@ function main() {
     if (urlPath.startsWith("/tts-cache")) {
       return proxyRequest(req, res, TTS_PROXY_TARGET + fullUrl);
     }
+    if (urlPath === "/tts") {
+      return proxyRequest(req, res, TTS_PROXY_TARGET + fullUrl);
+    }
     const filePath = path.resolve(root, "." + urlPath);
 
     // 防目录穿越

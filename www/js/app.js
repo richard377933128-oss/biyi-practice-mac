@@ -2,7 +2,7 @@ import "./error-trap.js?v=20261012dl"; // 全局错误兜底，必须第一个 i
 import { initKvStore } from "./lib/kv-store.js?v=20261012dl";
 import { createTranslation } from "./translation.js?v=20261012dl";
 // screen-record.js / system-camera.js 合计约 3700 行，启动时动态加载（见 boot() 末尾）
-import { createEdgeSpeech, getTtsEngine, setTtsEngine, getSavedVoice, setSavedVoice, ROTATE_VOICE, isRotateVoice, rotateVoiceAt, peekRotateVoice, voiceCacheKey, resolvePlayVoice } from "./edge-tts.js?v=20261013ready";
+import { createEdgeSpeech, getTtsEngine, setTtsEngine, getSavedVoice, setSavedVoice, ROTATE_VOICE, isRotateVoice, rotateVoiceAt, peekRotateVoice, voiceCacheKey, resolvePlayVoice } from "./edge-tts.js?v=20261014ios7";
 import { hasSpeechBlob } from "./tts-cache.js?v=20261013ready";
 import { isLockStressOn, setLockStressOn } from "./lock-screen.js?v=20261012dl";
 import { batchDownloadSpeech, showDownloadBadge, updateDownloadBadge, hideDownloadBadge, getDefaultDownloadVoice } from "./audio-download.js?v=20261012dl";
@@ -1533,8 +1533,10 @@ function confirmReadVoice() {
     const [engine, ...rest] = String(checked.value).split("|");
     const id = rest.join("|");
     const eng = engine === "apple" ? "apple" : "online";
+    console.log("[confirmReadVoice] engine=", eng, "voice=", id);
     setTtsEngine(eng);
     setSavedVoice(id, eng);
+    console.log("[confirmReadVoice] saved, now getTtsEngine()=", getTtsEngine(), "savedVoice=", getSavedVoice("online"));
     // 换了音色 → 缓存 key 变了，三个标记立刻重新评估
     refreshAudioReadyIndicators();
     // 全文朗读、笔译、意群点读共用这个声音

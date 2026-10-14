@@ -16,6 +16,7 @@ class BridgeViewController: CAPBridgeViewController {
     bridge?.registerPluginInstance(SystemCameraPlugin())
     bridge?.registerPluginInstance(AppleTranslatePlugin())
     bridge?.registerPluginInstance(AppleSpeechPlugin())
+    bridge?.registerPluginInstance(GoogleTtsPlugin())
     activatePlaybackSession()
     applyChrome()
     lockZoomAllowScroll()

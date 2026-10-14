@@ -3,9 +3,45 @@
 import crypto from "crypto";
 import fs from "fs";
 import http from "http";
+import net from "net";
 import path from "path";
 import tls from "tls";
 import { fileURLToPath } from "url";
+
+/** 如果系统配置了 HTTP(S) 代理（如 MacPacket 127.0.0.1:1082），走代理 CONNECT 隧道 */
+function proxyTarget() {
+  return process.env.HTTPS_PROXY || process.env.https_proxy || process.env.HTTP_PROXY || process.env.http_proxy || "http://127.0.0.1:1082";
+}
+
+/** 通过 HTTP CONNECT 隧道建立到目标的原始 TCP 连接 */
+function connectViaProxy(host, port) {
+  return new Promise((resolve, reject) => {
+    const pt = new URL(proxyTarget());
+    const sock = net.connect(Number(pt.port) || 80, pt.hostname, () => {
+      const req =
+        `CONNECT ${host}:${port} HTTP/1.1\r\n` +
+        `Host: ${host}:${port}\r\n` +
+        `Proxy-Connection: Keep-Alive\r\n\r\n`;
+      sock.write(req);
+      let buf = Buffer.alloc(0);
+      const timer = setTimeout(() => { sock.destroy(); reject(new Error("proxy timeout")); }, 10000);
+      sock.once("data", (data) => {
+        buf = Buffer.concat([buf, data]);
+        const firstLine = buf.toString("utf8").split("\r\n")[0];
+        clearTimeout(timer);
+        if (/HTTP\/1\.[01] 200/.test(firstLine)) {
+          sock.removeAllListeners("data");
+          resolve(sock);
+        } else {
+          sock.destroy();
+          reject(new Error(`proxy ${firstLine}`));
+        }
+      });
+      sock.once("error", (err) => reject(err));
+    });
+    sock.once("error", (err) => reject(err));
+  });
+}
 
 const CACHE_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "cache", "tts");
 
@@ -162,14 +198,153 @@ export function voiceKey(text, voice) {
   return v === VOICE ? text : `${v}|${text}`;
 }
 
-export function synthesize(text, voice) {
+export async function synthesize(text, voice) {
   const spoken = String(text || "").replace(/\s+/g, " ").trim();
-  if (!spoken) return Promise.reject(new Error("empty"));
+  if (!spoken) throw new Error("empty");
+  // 直接走 Google Translate TTS（通过 MacPacket 代理 CONNECT 隧道）
+  return synthesizeGoogleViaProxy(spoken, voice);
+}
+
+/** 通过 Google Translate TTS（走 MacPacket CONNECT 隧道 + TLS，和 curl -x 一样） */
+async function synthesizeGoogleViaProxy(text, voice) {
+  const short = voice?.startsWith("zh")
+    ? voice.split("-").slice(0, 2).join("-")
+    : voice?.split("-")[0] || "en";
+  const target = `https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&q=${encodeURIComponent(text)}&tl=${short}&ttsspeed=1`;
+  const u = new URL(target);
+  const rawSocket = await connectViaProxy(u.hostname, 443);
+  return new Promise((resolve, reject) => {
+    const socket = tls.connect({ socket: rawSocket, servername: u.hostname });
+    let settled = false;
+    // 总超时（兜底）
+    const hardTimer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      console.error(`[google-tts] hard timeout, body=${bodyBuf.length}`);
+      socket.destroy();
+      if (bodyBuf.length > 0) {
+        resolve(chunked ? decodeChunked(bodyBuf) : bodyBuf);
+      } else {
+        reject(new Error("google timeout"));
+      }
+    }, 10000);
+    // body 空闲超时（body 没新数据 1.5s 就返回已有数据）
+    let idleTimer = null;
+    const resetIdle = () => {
+      if (idleTimer) clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => {
+        if (settled || !headerDone) return;
+        settled = true;
+        clearTimeout(hardTimer);
+        console.error(`[google-tts] idle timeout, body=${bodyBuf.length} chunked=${chunked}`);
+        socket.destroy();
+        resolve(chunked ? decodeChunked(bodyBuf) : bodyBuf);
+      }, 1500);
+    };
+    const ok = (buf) => {
+      if (settled) return; settled = true;
+      clearTimeout(hardTimer); if (idleTimer) clearTimeout(idleTimer);
+      socket.destroy();
+      resolve(buf);
+    };
+    const fail = (err) => {
+      if (settled) return; settled = true;
+      clearTimeout(hardTimer); if (idleTimer) clearTimeout(idleTimer);
+      socket.destroy();
+      reject(err);
+    };
+
+    socket.on("error", (e) => { console.error(`[google-tts] err: ${e.message}`); fail(e); });
+    socket.on("secureConnect", () => {
+      socket.write(
+        [
+          `GET ${u.pathname}${u.search} HTTP/1.1`,
+          `Host: ${u.hostname}`,
+          "User-Agent: curl/8.7.1",
+          "Accept: */*",
+          "Connection: close",
+          "",
+          "",
+        ].join("\r\n")
+      );
+    });
+    let headerBuf = Buffer.alloc(0);
+    let bodyBuf = Buffer.alloc(0);
+    let headerDone = false;
+    let chunked = false;
+    let expectedLen = -1;
+    socket.on("data", (data) => {
+      resetIdle();
+      if (!headerDone) {
+        headerBuf = Buffer.concat([headerBuf, data]);
+        const split = headerBuf.indexOf("\r\n\r\n");
+        if (split < 0) return;
+        const head = headerBuf.subarray(0, split).toString("utf8");
+        const lines = head.split("\r\n");
+        if (!/HTTP\/1\.[01] 200/.test(lines[0])) {
+          console.error(`[google-tts] HTTP ${lines[0]}`);
+          fail(new Error(`google ${lines[0]}`));
+          return;
+        }
+        chunked = /transfer-encoding:\s*chunked/i.test(head);
+        const clMatch = head.match(/content-length:\s*(\d+)/i);
+        expectedLen = clMatch ? parseInt(clMatch[1], 10) : -1;
+        headerDone = true;
+        const rest = headerBuf.subarray(split + 4);
+        if (rest.length > 0) bodyBuf = Buffer.concat([bodyBuf, rest]);
+        // 收够了？
+        if (expectedLen > 0 && bodyBuf.length >= expectedLen) { ok(bodyBuf); return; }
+        // chunked 结束了？
+        if (chunked && hasChunkedEnd(bodyBuf)) { ok(decodeChunked(bodyBuf)); return; }
+      } else {
+        bodyBuf = Buffer.concat([bodyBuf, data]);
+        if (expectedLen > 0 && bodyBuf.length >= expectedLen) { ok(bodyBuf); return; }
+        if (chunked && hasChunkedEnd(bodyBuf)) { ok(decodeChunked(bodyBuf)); return; }
+      }
+    });
+    socket.on("end", () => {
+      if (settled) return;
+      if (bodyBuf.length === 0) { fail(new Error("google empty")); return; }
+      ok(chunked ? decodeChunked(bodyBuf) : bodyBuf);
+    });
+  });
+}
+
+/** 检测 chunked 编码是否结束（末尾是 0\r\n\r\n） */
+function hasChunkedEnd(buf) {
+  // chunked 结束标记：最后一个 chunk 是 size=0，即 "0\r\n\r\n"
+  if (buf.length < 5) return false;
+  const tail = buf.subarray(buf.length - 5, buf.length).toString("utf8");
+  return tail === "0\r\n\r\n";
+}
+
+/** 解码 HTTP chunked transfer encoding */
+function decodeChunked(buf) {
+  let out = Buffer.alloc(0);
+  let offset = 0;
+  while (offset < buf.length) {
+    const nl = buf.indexOf("\r\n", offset);
+    if (nl < 0) break;
+    const sizeLine = buf.subarray(offset, nl).toString("ascii").trim();
+    const size = parseInt(sizeLine, 16);
+    if (isNaN(size) || size === 0) break;
+    const chunkStart = nl + 2;
+    const chunkEnd = chunkStart + size;
+    if (chunkEnd > buf.length) break;
+    out = Buffer.concat([out, buf.subarray(chunkStart, chunkEnd)]);
+    offset = chunkEnd + 2; // trailing \r\n
+  }
+  return out;
+}
+
+/** 通过 Edge WebSocket（走代理 CONNECT 隧道） */
+async function synthesizeEdgeViaProxy(text, voice) {
   const id = crypto.randomBytes(16).toString("hex");
   const url = `wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1?TrustedClientToken=${TRUSTED}&ConnectionId=${id}&Sec-MS-GEC=${secMsGec()}&Sec-MS-GEC-Version=${GEC_VERSION}`;
   const u = new URL(url);
+  const rawSocket = await connectViaProxy(u.hostname, 443);
   return new Promise((resolve, reject) => {
-    const socket = tls.connect(443, u.hostname, { servername: u.hostname });
+    const socket = tls.connect({ socket: rawSocket, servername: u.hostname });
     const state = { buf: Buffer.alloc(0), frag: null, fragOp: 2, pong: null };
     const audio = [];
     let upgraded = false;
@@ -177,12 +352,14 @@ export function synthesize(text, voice) {
     const fail = (err) => {
       if (settled) return;
       settled = true;
+      console.warn(`[edge-tts] FAIL:`, err?.message || err);
       socket.destroy();
       reject(err);
     };
     const timer = setTimeout(() => fail(new Error("timeout")), 20000);
     socket.on("error", (err) => fail(err));
     socket.on("secureConnect", () => {
+      console.error("[edge-tts] TLS handshake OK, sending WS upgrade...");
       const key = crypto.randomBytes(16).toString("base64");
       socket.write(
         [
@@ -196,6 +373,14 @@ export function synthesize(text, voice) {
           `User-Agent: ${EDGE_UA}`,
           "Pragma: no-cache",
           "Cache-Control: no-cache",
+          "Accept: */*",
+          "Accept-Language: en-US,en;q=0.9",
+          "Sec-CH-UA: \" Not;A Brand\";v=\"99\", \"Microsoft Edge\";v=\"143\", \"Chromium\";v=\"143\"",
+          "Sec-CH-UA-Mobile: ?0",
+          "Sec-CH-UA-Platform: \"Windows\"",
+          "Sec-Fetch-Site: none",
+          "Sec-Fetch-Mode: websocket",
+          "Sec-Fetch-Dest: empty",
           "",
           "",
         ].join("\r\n")
@@ -209,6 +394,7 @@ export function synthesize(text, voice) {
         const head = state.buf.subarray(0, split).toString("utf8");
         state.buf = state.buf.subarray(split + 4);
         if (!/^HTTP\/1\.1 101/.test(head)) {
+          console.error(`[edge-tts] Edge rejected WS upgrade:\n${head.split("\r\n").slice(0,5).join("\r\n")}`);
           fail(new Error(head.split("\r\n")[0] || "handshake"));
           return;
         }
@@ -279,7 +465,7 @@ function readJsonBody(req) {
   });
 }
 
-function listen(port) {
+function listen(port, bind = "127.0.0.1") {
   const server = http.createServer((req, res) => {
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
@@ -334,14 +520,12 @@ function listen(port) {
       const text = body.text || "";
       const key = voiceKey(text, body.voice);
       const cached = readClipFile(key);
-      if (cached) {
-        sendAudio(res, cached);
-        return;
-      }
+      if (cached) { sendAudio(res, cached); return; }
       synthesize(text, body.voice).then((audio) => {
         try { writeClipFile(key, audio); } catch (_) {}
         sendAudio(res, audio);
       }).catch((err) => {
+        console.error(`[tts] FAIL:`, err?.message || err);
         res.writeHead(502, { "Content-Type": "text/plain; charset=utf-8" });
         res.end(String(err?.message || err));
       });
@@ -350,15 +534,17 @@ function listen(port) {
       res.end(String(err?.message || err));
     });
   });
-  server.listen(port, "127.0.0.1");
+  server.listen(port, bind);
   return server;
 }
 
 const listenArg = process.argv.indexOf("--listen");
+const bindArg = process.argv.indexOf("--bind");
 if (listenArg >= 0) {
   const port = Number(process.argv[listenArg + 1]) || 8767;
-  listen(port);
-  console.log(`edge-tts proxy http://127.0.0.1:${port}/tts`);
+  const bind = bindArg >= 0 ? process.argv[bindArg + 1] : "127.0.0.1";
+  listen(port, bind);
+  console.log(`edge-tts proxy http://${bind}:${port}/tts`);
 }
 
 if (process.argv.includes("--once")) {

@@ -15,6 +15,7 @@
 		B1A2C3D41E5F60718293A4D5 /* SystemCameraPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A2C3D41E5F60718293A4D0 /* SystemCameraPlugin.swift */; };
 		B1A2C3D41E5F60718293A4E5 /* AppleTranslatePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A2C3D41E5F60718293A4E0 /* AppleTranslatePlugin.swift */; };
 		B1A2C3D41E5F60718293A4F5 /* AppleSpeechPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A2C3D41E5F60718293A4F0 /* AppleSpeechPlugin.swift */; };
+		B1A2C3D41E5F60718293A505 /* GoogleTtsPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A2C3D41E5F60718293A500 /* GoogleTtsPlugin.swift */; };
 		504EC30D1FED79650016851F /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC30B1FED79650016851F /* Main.storyboard */; };
 		504EC30F1FED79650016851F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 504EC30E1FED79650016851F /* Assets.xcassets */; };
 		504EC3121FED79650016851F /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC3101FED79650016851F /* LaunchScreen.storyboard */; };
@@ -32,6 +33,7 @@
 		B1A2C3D41E5F60718293A4D0 /* SystemCameraPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemCameraPlugin.swift; sourceTree = "<group>"; };
 		B1A2C3D41E5F60718293A4E0 /* AppleTranslatePlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleTranslatePlugin.swift; sourceTree = "<group>"; };
 		B1A2C3D41E5F60718293A4F0 /* AppleSpeechPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleSpeechPlugin.swift; sourceTree = "<group>"; };
+		B1A2C3D41E5F60718293A500 /* GoogleTtsPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoogleTtsPlugin.swift; sourceTree = "<group>"; };
 		504EC30C1FED79650016851F /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/Main.storyboard; sourceTree = "<group>"; };
 		504EC30E1FED79650016851F /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		504EC3111FED79650016851F /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
@@ -90,6 +92,7 @@
 				B1A2C3D41E5F60718293A4D0 /* SystemCameraPlugin.swift */,
 				B1A2C3D41E5F60718293A4E0 /* AppleTranslatePlugin.swift */,
 				B1A2C3D41E5F60718293A4F0 /* AppleSpeechPlugin.swift */,
+				B1A2C3D41E5F60718293A500 /* GoogleTtsPlugin.swift */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
 				504EC30E1FED79650016851F /* Assets.xcassets */,
 				504EC3101FED79650016851F /* LaunchScreen.storyboard */,
@@ -230,6 +233,7 @@
 				B1A2C3D41E5F60718293A4D5 /* SystemCameraPlugin.swift in Sources */,
 				B1A2C3D41E5F60718293A4E5 /* AppleTranslatePlugin.swift in Sources */,
 				B1A2C3D41E5F60718293A4F5 /* AppleSpeechPlugin.swift in Sources */,
+				B1A2C3D41E5F60718293A505 /* GoogleTtsPlugin.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
